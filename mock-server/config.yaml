@@ -1,0 +1,15 @@
+# Mock server configuration
+server:
+  port: "8899"
+
+validator:
+  # Path to the keypair file (relative to this config file or absolute path)
+  identity_keypair: "../local-test/active-identity.json"
+  running_version: "1.18.0"
+
+# Health endpoint configuration
+health:
+  # Response status code (200, 500, etc.)
+  status_code: 200
+  # Response body
+  response_body: "ok"

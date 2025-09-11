@@ -1,0 +1,15 @@
+# Mock server configuration for passive validator
+server:
+  port: "8899"
+
+validator:
+  # Path to the keypair file (relative to this config file or absolute path)
+  identity_keypair: "../local-test/passive-identity.json"
+  running_version: "1.17.0"
+
+# Health endpoint configuration
+health:
+  # Response status code (200, 500, etc.)
+  status_code: 200
+  # Response body
+  response_body: "ok"

@@ -1,0 +1,167 @@
+# Configuration for solana-validator-version-sync program
+# log
+# description:
+#   Logging configuration
+log:
+  # level
+  # required: false
+  # default: info
+  # description:
+  #   Minimum log level to print. One of: debug, info, warn, error, fatal
+  level: info
+
+  # format
+  # required: false
+  # default: text
+  # description:
+  #   Log format. One of: text, logfmt, json
+  format: text
+
+# validator
+# description:
+#   Settings for the validator this program runs on
+validator:
+  # required: true
+  # description:
+  #   The solana validator client- one of: agave, jito-solana, firedancer
+  client: agave
+
+  # required: true
+  # description:
+  #   The URL of the validator's RPC endpoint
+  rpc_url: http://127.0.0.1:8899
+
+  # required: true
+  # description:
+  #   The paths to the active and passive identity keyfiles for the validator
+  # on config load they are verfied to exist and parsed for pubkey extraction
+  identities:
+    active: local-test/active-identity.json
+    passive: local-test/passive-identity.json
+
+# cluster
+# description:
+#   The cluster the validator is running on - controls synv version lookup
+cluster:
+  # name
+  # required: true
+  # description:
+  #   Solana cluster this validator is running on. One of mainnet-beta or testnet
+  name: testnet
+
+# sync
+# description:
+#   Main sync settings
+sync:
+  # interval_duration
+  # required: false
+  # default: 10m
+  # description:
+  #   The interval at which to run the sync process. Every interval_duration the sync process loads and validates the config
+  #   then checks if a sync is required based on the settings in this section
+  interval_duration: 10m
+
+  # client_source_repository_urls
+  # required: false
+  # description:
+  #  Configuration for the client source repositories,
+  # because no tags are used for pointing to cluster-ready versions, we follow the release notes.
+  # this is brittle but works for now.
+  client_source_repositories:
+    agave:
+      # git repo url
+      url: https://github.com/anza-xyz/agave
+      # regexes to match release notes for the given cluster
+      release_notes_regexes:
+        mainnet-beta: ".*This is a stable release suitable for use on Mainnet Beta.*"
+        testnet: ".*This is a Testnet release.*"
+    jito-solana:
+      url: https://github.com/jito-labs/jito-solana
+      # regexes to match release notes for the given cluster, jito-solana reads the available versions from agave url
+      # release notes and then tries to find the matching tag with the suffix "-jito" in jito-solana repo.
+      release_notes_regexes:
+        mainnet-beta: ".*This is a stable release suitable for use on Mainnet Beta.*"
+        testnet: ".*This is a Testnet release.*"
+        devnet: "It is (also) recommended for Devnet"
+    firedancer:
+      url: https://github.com/firedancer-io/firedancer
+      # regexes to match release notes for the given cluster
+      release_notes_regexes:
+        mainnet-beta: "This is a mainnet ready release"
+        testnet: "This is a Testnet release."
+  # allowed_semver_changes
+  # required: false
+  # description:
+  #   Allowed semver changes for the given client, major, minor, patch
+  #   major: defaults to false - means no syncing happens on major version changes
+  #   minor: defaults to true - means syncing happens on minor version changes
+  #   patch: defaults to true - means syncing happens on patch version changes
+  allowed_semver_changes:
+    major: false
+    minor: true
+    patch: true
+  # enable_sfdp_compliance
+  # required: false
+  # default: false
+  # description:
+  #   If true, the sync process will check if the installed version is within the SFDP version bounds and trigger
+  #   a sync if it is not and it satisfies the allowed_semver_changes
+  enable_sfdp_compliance: true
+  # commands
+  # required: false
+  # description:
+  #   Commands to run when there is a version change. A given command has the following options:
+  #   name: (required) the name of the command for logging purposes
+  #   disabled: (optional) defaults to false - if true, the command will be ignored
+  #   dry_run: (optional) defaults to false - if true, the command will not be executed, only logged
+  #   allow_failure: if true, a non-zero exit code will be logged but subsequent commands will run. by default it is false so a non-zero exit code will prevent subsequent commands from running
+  #   cmd: the command to run
+  #   args: (optional) the arguments to pass to the command. Each argument is a string and will be interpolated with the following variables:
+  #      .Hostname: the hostname of the validator
+  #      .Validator.RPCURL: the RPC URL of the validator
+  #      .Validator.Role: the role of the validator (active or passive)
+  #      .Validator.IdentityPublicKey: the public key of the validator's identity as reported by the validator local rpc
+  #     .Sync.Client: the client name
+  #     .Sync.FromVersion: the current running version as reported by the validator local rpc
+  #     .Sync.ToVersion: the target version
+  #     .Sync.Role: the role of the validator (active or passive)
+  #     .Sync.Cluster: the cluster the validator is running on
+  #     .Sync.IsSFDPComplianceEnabled: if true, the SFDP version bounds are enabled
+  commands:
+    - name: "(re)build validator source"
+      allow_failure: true
+      disabled: false
+      cmd: /home/solana/bin/solana-validator-source.sh
+      args:
+        [
+          "build",
+          "--client={{ .Sync.Client }}",
+          "--version={{ .Sync.ToVersion }}",
+          "{{ if .Sync.IsSFDPComplianceEnabled }}--allow-downgrade{{ end }}",
+          "--mods-enabled",
+          "--mods-ignore-incompatible-semver",
+          "--mod-name=default",
+        ]
+    - name: "(re)install built validator source (updates symlinks)"
+      disabled: false
+      cmd: /home/solana/bin/solana-validator-source.sh
+      args:
+        [
+          "install",
+          "--client={{ .Sync.Client }}",
+          "--version={{ .Sync.ToVersion }}",
+        ]
+    - name: "restart validator service"
+      disabled: true
+      must_succeed: true
+      cmd: "/home/solana/bin/solana-validator-restart-and-wait-for-healthy.sh"
+      args:
+        ["--service-name=sol.service", "--rpc-address={{ .Validator.RPCURL }}"]
+    - name: "notify jira"
+      disabled: true
+      cmd: /home/solana/bin/jira-api.sh
+      args:
+        [
+          "create-ticket",
+          '--title="[solana-validator-version-sync] {{ .Hostname }} {{ .Sync.Client }} {{ .Sync.FromVersion }} -> {{ .Sync.ToVersion }}"',
+        ]

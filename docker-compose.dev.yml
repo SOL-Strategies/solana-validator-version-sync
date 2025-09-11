@@ -1,0 +1,28 @@
+services:
+  solana-validator-version-sync:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+      - /app/vendor
+    environment:
+      - GO_ENV=development
+    command: ["air", "-c", "/app/.air.toml"]
+    restart: unless-stopped
+    depends_on:
+      - mock-validator
+
+  mock-validator:
+    build:
+      context: ./mock-server
+      dockerfile: Dockerfile
+    ports:
+      - "8899:8899"
+    volumes:
+      - ./mock-server/config-docker.yaml:/app/config.yaml
+      - ./local-test:/app/local-test
+    command: ["./mock-server", "/app/config.yaml"]
+    restart: unless-stopped

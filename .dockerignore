@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Build artifacts
+bin/
+tmp/
+*.log
+
+# Test files
+*_test.go
+testdata/
+coverage.out
+coverage.html
+
+# Development files
+.air.toml
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Vendor (if using vendoring)
+vendor/
