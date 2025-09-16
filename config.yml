@@ -1,0 +1,33 @@
+log:
+  level: info
+  format: text
+
+validator:
+  client: jito-solana
+  rpc_url: http://127.0.0.1:8899
+  identities:
+    active: local-test/active-identity.json
+    passive: local-test/passive-identity.json
+
+cluster:
+  name: testnet
+
+sync:
+  enabled_when_active: true
+  allowed_semver_changes:
+    major: true
+    minor: true
+    patch: true
+  enable_sfdp_compliance: true
+  commands:
+    - name: build
+      allow_failure: false
+      stream_output: true
+      disabled: false
+      cmd: local-test/solana-validator-source.sh
+      args:
+        [
+          "build",
+          "--client={{ .ValidatorClient }}",
+          "--version={{ .VersionTo }}",
+        ]

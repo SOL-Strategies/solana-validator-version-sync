@@ -2,7 +2,10 @@ package config
 
 import (
 	"fmt"
-	"os"
+	"net/url"
+
+	"github.com/gagliardetto/solana-go"
+	"github.com/sol-strategies/solana-validator-version-sync/internal/constants"
 )
 
 // Validator represents the validator configuration
@@ -18,79 +21,45 @@ type Validator struct {
 // Identities represents the validator identity configuration
 type Identities struct {
 	// Active is the path to the active identity keyfile
-	Active string `koanf:"active"`
+	ActiveKeyPairFile string `koanf:"active"`
 	// Passive is the path to the passive identity keyfile
-	Passive string `koanf:"passive"`
-	// ActiveKeyPair is the loaded active keypair (simplified for now)
-	ActiveKeyPair interface{} `koanf:"-"`
-	// PassiveKeyPair is the loaded passive keypair (simplified for now)
-	PassiveKeyPair interface{} `koanf:"-"`
-	// ActiveKeyPairFile is the file path for active keypair
-	ActiveKeyPairFile string `koanf:"-"`
-	// PassiveKeyPairFile is the file path for passive keypair
-	PassiveKeyPairFile string `koanf:"-"`
+	PassiveKeyPairFile string `koanf:"passive"`
+	// ActiveKeyPair is the loaded active keypair
+	ActiveKeyPair solana.PrivateKey `koanf:"-"`
+	// PassiveKeyPair is the loaded passive keypair
+	PassiveKeyPair solana.PrivateKey `koanf:"-"`
 }
 
 // Load loads the identity keypairs from files
-func (i *Identities) Load() error {
+func (i *Identities) Load() (err error) {
+
 	// Load active identity
-	if i.Active != "" {
-		i.ActiveKeyPairFile = i.Active
-		// For now, just store the file path - keypair loading can be implemented later
-		i.ActiveKeyPair = i.Active
+	i.ActiveKeyPair, err = solana.PrivateKeyFromSolanaKeygenFile(i.ActiveKeyPairFile)
+	if err != nil {
+		return fmt.Errorf("failed to load active keypair from %s: %w", i.ActiveKeyPairFile, err)
 	}
 
 	// Load passive identity
-	if i.Passive != "" {
-		i.PassiveKeyPairFile = i.Passive
-		// For now, just store the file path - keypair loading can be implemented later
-		i.PassiveKeyPair = i.Passive
+	i.PassiveKeyPair, err = solana.PrivateKeyFromSolanaKeygenFile(i.PassiveKeyPairFile)
+	if err != nil {
+		return fmt.Errorf("failed to load passive keypair from %s: %w", i.PassiveKeyPairFile, err)
 	}
 
 	return nil
 }
 
-// SetDefaults sets default values for the validator configuration
-func (v *Validator) SetDefaults() {
-	if v.RPCURL == "" {
-		v.RPCURL = "http://127.0.0.1:8899"
-	}
-}
-
 // Validate validates the validator configuration
 func (v *Validator) Validate() error {
 	// Validate client
-	validClients := []string{"agave", "jito-solana", "firedancer"}
-	validClient := false
-	for _, client := range validClients {
-		if v.Client == client {
-			validClient = true
-			break
-		}
-	}
-	if !validClient {
-		return fmt.Errorf("validator.client must be one of %v, got: %s", validClients, v.Client)
+	err := constants.ValidateClientName(v.Client)
+	if err != nil {
+		return err
 	}
 
 	// Validate RPC URL
-	if v.RPCURL == "" {
-		return fmt.Errorf("validator.rpc_url is required")
-	}
-
-	// Validate identities
-	if v.Identities.Active == "" {
-		return fmt.Errorf("validator.identities.active is required")
-	}
-	if v.Identities.Passive == "" {
-		return fmt.Errorf("validator.identities.passive is required")
-	}
-
-	// Check if identity files exist
-	if _, err := os.Stat(v.Identities.Active); os.IsNotExist(err) {
-		return fmt.Errorf("active identity file does not exist: %s", v.Identities.Active)
-	}
-	if _, err := os.Stat(v.Identities.Passive); os.IsNotExist(err) {
-		return fmt.Errorf("passive identity file does not exist: %s", v.Identities.Passive)
+	_, err = url.Parse(v.RPCURL)
+	if err != nil {
+		return fmt.Errorf("validator.rpc_url %s is not a valid URL: %w", v.RPCURL, err)
 	}
 
 	return nil

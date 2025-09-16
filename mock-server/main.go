@@ -127,8 +127,15 @@ func rpcHandler(w http.ResponseWriter, r *http.Request) {
 			"jsonrpc": "2.0",
 			"id":      request.ID,
 			"result": map[string]interface{}{
-				"value": getIdentityPubkey(),
+				"identity": getIdentityPubkey(),
 			},
+		}
+
+	case "getHealth":
+		response = map[string]interface{}{
+			"jsonrpc": "2.0",
+			"id":      request.ID,
+			"result":  config.Health.ResponseBody,
 		}
 
 	case "getVersion":
