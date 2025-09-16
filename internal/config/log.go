@@ -28,16 +28,6 @@ type Log struct {
 	ParsedFormatter log.Formatter `koanf:"-"`
 }
 
-// SetDefaults sets default values for the log configuration
-func (l *Log) SetDefaults() {
-	if l.Level == "" {
-		l.Level = "info"
-	}
-	if l.Format == "" {
-		l.Format = "text"
-	}
-}
-
 // Validate validates the log configuration
 func (l *Log) Validate() (err error) {
 	// try to parse the supplied level

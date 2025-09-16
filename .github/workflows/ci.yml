@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop, feature/*, bugfix/*, hotfix/*]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run tests in Docker
+        run: |
+          docker run --rm -v $(pwd):/app -w /app golang:1.25-alpine sh -c "
+            apk add --no-cache git ca-certificates &&
+            go mod download &&
+            go test -mod=mod -v ./...
+          "
+
+      - name: Run tests with race detection in Docker
+        run: |
+          docker run --rm -v $(pwd):/app -w /app golang:1.25-alpine sh -c "
+            apk add --no-cache git ca-certificates gcc musl-dev &&
+            go mod download &&
+            CGO_ENABLED=1 go test -mod=mod -race -v ./...
+          "

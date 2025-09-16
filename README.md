@@ -1,15 +1,18 @@
-# Solana Validator Version Sync
+# solana-validator-version-sync
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A version synchronization manager for Solana validators that monitors the validator's current version and syncs it with the latest available versions based on SFDP requirements and GitHub releases.
+A simple version synchronization manager for Solana validators, including [SFDP](https://solana.org/delegation-program) compliance.
+
+![solanna-validator-version-sync](freeze.png)
+
 
 ## Features
 
-- **Version Monitoring**: Continuously monitors the validator's current running version
-- **SFDP Compliance**: Checks version requirements against SFDP (Solana Foundation Delegation Program) bounds
-- **GitHub Integration**: Fetches available versions from GitHub releases based on cluster-specific release notes
-- **Flexible Commands**: Executes configurable commands during version sync with template interpolation
-- **Multiple Clients**: Supports Agave, Jito-Solana, and Firedancer validators
-- **Development Tools**: Includes mock server for testing and development
+- 👀 **Version Monitoring**: Continuously monitors the validator's current running version compared to latest available releases.
+- 👮 **SFDP Compliance**: Checks version requirements against SFDP (Solana Foundation Delegation Program) bounds.
+- ♻️ **Sync Commands**: Executes configurable commands when a version sync for the given validator client is required.
+- ⌚ **Single-shot or recurring**: Run once or on a specified interval
+- ✅ **Multiple Clients**: Supports [agave](https://github.com/anza-xyz/agave), [jito-solana](https://github.com/jito-foundation/jito-solana/), and [firedancer](https://github.com/firedancer-io/firedancer) validator client release monitoring.
 
 ## Installation
 
@@ -21,146 +24,124 @@ cd solana-validator-version-sync
 make build
 ```
 
-### Using Go Install
+### Download pre-built binary
+
+Download the latest release from the [Releases page](https://github.com/sol-strategies/solana-validator-version-sync/releases).
+
+## Usage
+
+### Run Once
 
 ```bash
-go install github.com/sol-strategies/solana-validator-version-sync/cmd/solana-validator-version-sync@latest
+solana-validator-version-sync --config config.yaml run
+```
+
+### Run Continuously
+
+```bash
+# can run this command as a systemd service
+solana-validator-version-sync --config config.yaml run --on-interval 1h
 ```
 
 ## Configuration
 
-Create a configuration file (e.g., `config.yaml`) based on the example in `example-config.yml`:
+Create a configuration file (e.g., `config.yml`) with the following options:
 
 ```yaml
 log:
-  level: info
-  format: text
+  level: info  # optional, default: info, one of debug|info|warn|error|fatal
+  format: text # optional, default: text, one of text|logfmt|json
 
 validator:
-  client: agave
-  rpc_url: http://127.0.0.1:8899
+  client: agave                  # required, one of agave|jito-solana|firedancer
+  rpc_url: http://127.0.0.1:8899 # optional, default: http:127.0.0.1:8899 - local validator rpc URL
   identities:
-    active: /home/solana/active-identity.json
-    passive: /home/solana/passive-identity.json
+    active: local-test/active-identity.json   # required - path to validator active keypair
+    passive: local-test/passive-identity.json # required - path to validator passive keypair
 
 cluster:
-  name: testnet
+  name: testnet # required - one of mainnet-beta|testnet
 
 sync:
-  interval_duration: 10m
-  enable_sfdp_compliance: true
-  client_source_repositories:
-    agave:
-      url: https://github.com/anza-xyz/agave
-      release_notes_regexes:
-        mainnet-beta: ".*This is a stable release suitable for use on Mainnet Beta.*"
-        testnet: ".*This is a Testnet release.*"
+  # Run sync commands even when the validator is active
+  # Use with care, usually only for testnet.
+  enabled_when_active: false # default: false
+
+  # Allowed semver changes for the given client, major, minor, patch, if the target version doesn't satisfy these allowed changes
+  # no sync commands are issued
   allowed_semver_changes:
-    major: false
-    minor: true
-    patch: true
+    major: false # default: false - sync when major version changes
+    minor: true  # default: true  - sync when minor version changes
+    patch: true  # default: true  - sync when patch version changes
+
+  # Ensure the target version satisfies SFDP requirements as reported by the API:
+  # https://api.solana.org/api/epoch/required_versions
+  enable_sfdp_compliance: true # default: false
+
+
+  # Commands to run when there is a version change. They will run in the order they are declared.  
+  # cmd, args, and environment values can be template strings and will be interpolated with the following variables:
+  #  .ClusterName                 cluster the validator is running on
+  #  .CommandIndex                index of the command in the commands array
+  #  .Hostname                    hostname of the validator
+  #  .SyncIsSFDPComplianceEnabled true|false (value of sync.enable_sfdp_compliance)
+  #  .ValidatorClient             client name (value of validator.client)
+  #  .ValidatorIdentityPublicKey  public key of the validator's identity as reported by .ValidatorRPCURL
+  #  .ValidatorRole               active|passive
+  #  .ValidatorRoleIsActive       true|false
+  #  .ValidatorRoleIsPassive      true|false
+  #  .ValidatorRPCURL             RPC URL of the validator (value of validator.rpc_url)
+  #  .VersionFrom                 current running version as reported by .ValidatorRPCURL
+  #  .VersionTo:                  sync target version
   commands:
-    - name: "build validator"
-      cmd: /home/solana/bin/solana-validator-source.sh
-      args: ["build", "--client={{ .Sync.Client }}", "--version={{ .Sync.ToVersion }}"]
+    - name: "build validator source"                     # required - vanity name for logging purposes
+      allow_failure: false                               # optional, default:false - when true, errors are logged and subsequent commands executed
+      stream_output: true                                # optional, default: false - when true, command output streamed
+      disabled: false                                    # optional, default: false - when true, command skipped
+      cmd: /home/solana/scripts/build-solana.sh          # required, supports templated string
+      args: ["build", "--client={{ .ValidatorClient }}"] # optional, supports templated strings
+      environment:                                       # optional, environment variables to pass to cmd, values support templated strings
+        TO_VERSION: "{{ .VerstionTo }}"
+    # ...
 ```
-
-## Usage
-
-### Run the Version Sync Manager
-
-```bash
-solana-validator-version-sync run --config config.yaml
-```
-
-### Command Line Options
-
-- `--config, -c`: Path to configuration file (default: `~/solana-validator-version-sync/config.yaml`)
-- `--log-level, -l`: Log level (debug, info, warn, error, fatal) - overrides config file setting
 
 ## Development
 
 ### Prerequisites
 
-- Go 1.24 or later
+- Go 1.25 or later
 - Make
+- Docker (for Docker development)
 
-### Building
+### Local Development
 
 ```bash
+# Build and run locally
 make build
+make dev
+
+# Build for all platforms
+make build-all
+
+# Run tests
+make test
+
+# Clean build artifacts
+make clean
 ```
 
-### Running Tests
+### Docker Development
 
 ```bash
-make test
+# Start development environment with Docker Compose
+make dev-docker
+
+# Stop development environment
+make dev-docker-stop
+
+# Build Docker image
+make docker-build
 ```
-
-### Development with Mock Server
-
-1. Start the mock validator server:
-   ```bash
-   make mock-server
-   ```
-
-2. In another terminal, run the program:
-   ```bash
-   make dev
-   ```
-
-### Available Make Targets
-
-- `build` - Build the binary
-- `build-linux` - Build for Linux AMD64
-- `clean` - Clean build artifacts
-- `test` - Run tests
-- `test-coverage` - Run tests with coverage
-- `lint` - Run linter
-- `fmt` - Format code
-- `deps` - Download dependencies
-- `run-demo` - Run with demo configuration
-- `mock-server` - Start mock server
-- `dev` - Run in development mode
-- `install` - Install the binary
-- `help` - Show help
-
-## Architecture
-
-The program is structured as follows:
-
-- `cmd/` - Command-line interface using Cobra
-- `internal/config/` - Configuration management with validation
-- `internal/sync/` - Main sync logic and orchestration
-- `internal/rpc/` - Solana validator RPC client
-- `internal/sfdp/` - SFDP API client
-- `internal/github/` - GitHub releases API client
-- `internal/command/` - Command execution with template interpolation
-- `demo/` - Mock server and demo configuration
-
-## How It Works
-
-1. **Configuration Loading**: Loads and validates the configuration file
-2. **Validator State**: Queries the local validator to get current version and identity
-3. **SFDP Check**: Optionally checks if the validator is in SFDP and gets version requirements
-4. **Version Discovery**: Fetches available versions from GitHub releases based on cluster-specific regex patterns
-5. **Sync Decision**: Determines if an upgrade, downgrade, or no change is needed
-6. **Command Execution**: Executes configured commands with template interpolation for version sync
-
-## Template Variables
-
-Commands support template interpolation with the following variables:
-
-- `.Hostname` - Hostname of the validator
-- `.Validator.RPCURL` - RPC URL of the validator
-- `.Validator.Role` - Role of the validator (active/passive)
-- `.Validator.IdentityPublicKey` - Public key of the validator's identity
-- `.Sync.Client` - Client name (agave, jito-solana, firedancer)
-- `.Sync.FromVersion` - Current running version
-- `.Sync.ToVersion` - Target version
-- `.Sync.Role` - Role of the validator
-- `.Sync.Cluster` - Cluster name
-- `.Sync.IsSFDPComplianceEnabled` - Whether SFDP compliance is enabled
 
 ## License
 

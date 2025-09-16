@@ -1,6 +1,8 @@
 package config
 
-import "fmt"
+import (
+	"github.com/sol-strategies/solana-validator-version-sync/internal/constants"
+)
 
 // Cluster represents the Solana cluster configuration
 type Cluster struct {
@@ -8,26 +10,7 @@ type Cluster struct {
 	Name string `koanf:"name"`
 }
 
-// SetDefaults sets default values for the cluster configuration
-func (c *Cluster) SetDefaults() {
-	if c.Name == "" {
-		c.Name = "testnet"
-	}
-}
-
 // Validate validates the cluster configuration
 func (c *Cluster) Validate() error {
-	validClusters := []string{"mainnet-beta", "testnet"}
-	validCluster := false
-	for _, cluster := range validClusters {
-		if c.Name == cluster {
-			validCluster = true
-			break
-		}
-	}
-	if !validCluster {
-		return fmt.Errorf("cluster.name must be one of %v, got: %s", validClusters, c.Name)
-	}
-
-	return nil
+	return constants.ValidateClusterName(c.Name)
 }

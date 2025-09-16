@@ -59,7 +59,10 @@ func (c *Config) LoadFromFile(filePath string) error {
 	k := koanf.New(".")
 	c.File = filePath
 
-	// Load YAML config file
+	// Set defaults in koanf first
+	c.setKoanfDefaults(k)
+
+	// Load YAML config file (this will merge with defaults)
 	if err := k.Load(file.Provider(c.File), yaml.Parser()); err != nil {
 		return fmt.Errorf("error loading config file: %w", err)
 	}
@@ -74,9 +77,6 @@ func (c *Config) LoadFromFile(filePath string) error {
 
 // Initialize processes and validates the loaded configuration
 func (c *Config) Initialize() error {
-	// Set defaults
-	c.setDefaults()
-
 	// load identity key pair files
 	if err := c.Validator.Identities.Load(); err != nil {
 		return err
@@ -115,10 +115,18 @@ func (c *Config) validate() error {
 	return nil
 }
 
-// setDefaults sets default values for configuration
-func (c *Config) setDefaults() {
-	c.Log.SetDefaults()
-	c.Validator.SetDefaults()
-	c.Cluster.SetDefaults()
-	c.Sync.SetDefaults()
+// setKoanfDefaults sets default values in koanf configuration
+func (c *Config) setKoanfDefaults(k *koanf.Koanf) {
+	// Set log defaults
+	k.Set("log.level", "info")
+	k.Set("log.format", "text")
+
+	// Set validator defaults
+	k.Set("validator.rpc_url", "http://127.0.0.1:8899")
+
+	// Set sync defaults
+	// major defaults to false already
+	k.Set("sync.allowed_semver_changes.minor", true)
+	k.Set("sync.allowed_semver_changes.patch", true)
+	k.Set("sync.enable_sfdp_compliance", false)
 }

@@ -2,151 +2,157 @@ package github
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"regexp"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/google/go-github/v74/github"
+	"github.com/hashicorp/go-version"
+	"github.com/sol-strategies/solana-validator-version-sync/internal/constants"
+)
+
+var (
+	// Handle different GitHub URL formats:
+	// https://github.com/owner/repo
+	// https://github.com/owner/repo.git
+	// git@github.com:owner/repo.git
+	// git@github.com:owner/repo
+	// Regex pattern to match both HTTPS and SSH GitHub URLs
+	// Group 1: owner, Group 2: repo (without .git suffix)
+	githubRepoAndOwnerFromURLRegex = regexp.MustCompile(`(?:https://github\.com/|git@github\.com:)([^/]+)/([^/]+?)(?:\.git)?$`)
 )
 
 // Client represents a GitHub API client
 type Client struct {
-	baseURL string
-	client  *http.Client
-	logger  *log.Logger
+	releaseNotesRegex *regexp.Regexp
+	releaseTitleRegex *regexp.Regexp
+	repoURL           string
+	repoOwner         string
+	repoName          string
+	clientName        string
+	client            *github.Client
+	cluster           string
+	logger            *log.Logger
+}
+
+// Options represents the options for creating a new GitHub client
+type Options struct {
+	Cluster string
+	Client  string
 }
 
 // NewClient creates a new GitHub client
-func NewClient() *Client {
-	return &Client{
-		baseURL: "https://api.github.com",
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		logger: log.WithPrefix("github"),
+func NewClient(opts Options) (c *Client, err error) {
+	// Get client repo config
+	repoConfig, ok := clientRepoConfigs[opts.Client]
+	if !ok {
+		return nil, fmt.Errorf("client repo config not found for client: %s", opts.Client)
 	}
-}
 
-// Release represents a GitHub release
-type Release struct {
-	TagName     string    `json:"tag_name"`
-	Name        string    `json:"name"`
-	Body        string    `json:"body"`
-	PublishedAt time.Time `json:"published_at"`
-	Draft       bool      `json:"draft"`
-	Prerelease  bool      `json:"prerelease"`
-}
+	c = &Client{
+		cluster:    opts.Cluster,
+		clientName: opts.Client,
+		repoURL:    repoConfig.URL,
+		client:     github.NewClient(nil), // No auth token for public repos
+		logger:     log.WithPrefix("github"),
+	}
 
-// GetAvailableVersions gets available versions from GitHub releases that match the given regex
-func (c *Client) GetAvailableVersions(repoURL, releaseNotesRegex string) ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Extract owner and repo from URL
-	owner, repo, err := c.extractOwnerRepo(repoURL)
+	// extract owner and repo from URL
+	err = c.setOwnerAndRepo()
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract owner/repo from URL: %w", err)
 	}
 
-	// Compile the regex
-	regex, err := regexp.Compile(releaseNotesRegex)
+	// compile release notes regex
+	c.releaseNotesRegex, err = regexp.Compile(repoConfig.ReleaseNotesRegexes[c.cluster])
 	if err != nil {
-		return nil, fmt.Errorf("failed to compile regex: %w", err)
+		return nil, fmt.Errorf("failed to compile release notes regex: %w", err)
 	}
 
-	// Get releases from GitHub API
-	releases, err := c.getReleases(ctx, owner, repo)
+	// compile release title regex
+	c.releaseTitleRegex, err = regexp.Compile(repoConfig.ReleaseTitleRegexes[c.cluster])
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile release title regex: %w", err)
+	}
+
+	return c, nil
+}
+
+// GetLatestClientVersion gets the latest version from GitHub releases that match the given notes regex for the cluster and client
+func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Get releases from GitHub API using go-github
+	releases, _, err := c.client.Repositories.ListReleases(ctx, c.repoOwner, c.repoName, &github.ListOptions{
+		PerPage: 20, // We just need the last few releases
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get releases: %w", err)
 	}
 
-	// Filter releases that match the regex
-	var matchingVersions []string
+	versionStrings := []string{}
+
+	switch c.clientName {
+	case constants.ClientNameAgave:
+		// agave flag release cluster in release notes
+		versionStrings = versionsFromReleaseBodyRegex(releases, c.releaseNotesRegex)
+	case constants.ClientNameJitoSolana, constants.ClientNameFiredancer:
+		// jito-solana and firedancer flags release cluster in release title prefix
+		versionStrings = versionsFromReleaseTitleRegex(releases, c.releaseTitleRegex)
+	}
+
+	if len(versionStrings) == 0 {
+		return nil, fmt.Errorf("no releases found matching regex: %s", c.releaseNotesRegex.String())
+	}
+
+	// Create versions slice and sort
+	versions := make([]*version.Version, len(versionStrings))
+	for i, raw := range versionStrings {
+		v, _ := version.NewVersion(raw)
+		versions[i] = v
+	}
+	sort.Sort(version.Collection(versions))
+
+	latestVersion = versions[len(versions)-1]
+
+	c.logger.Info("latest version "+latestVersion.Core().String(), "client", c.clientName, "cluster", c.cluster, "repoURL", c.repoURL+"/releases")
+
+	return latestVersion, nil
+}
+
+// versionsFromReleaseTitleRegex gets versions from releases with titles matching the supplied regex
+func versionsFromReleaseTitleRegex(releases []*github.RepositoryRelease, regex *regexp.Regexp) (versionStrings []string) {
 	for _, release := range releases {
-		// Skip drafts and prereleases
-		if release.Draft || release.Prerelease {
-			continue
-		}
-
-		// Check if the release body matches the regex
-		if regex.MatchString(release.Body) {
-			// Extract version from tag name (remove 'v' prefix if present)
-			version := strings.TrimPrefix(release.TagName, "v")
-			matchingVersions = append(matchingVersions, version)
+		if regex.MatchString(release.GetName()) {
+			log.Debug("found matching release", "title", release.GetName(), "tag", release.GetTagName(), "version", release.GetTagName())
+			versionStrings = append(versionStrings, release.GetTagName())
 		}
 	}
-
-	// Sort versions (this is a simple string sort, might need more sophisticated version comparison)
-	sort.Strings(matchingVersions)
-
-	return matchingVersions, nil
+	return versionStrings
 }
 
-// extractOwnerRepo extracts owner and repo from a GitHub URL
-func (c *Client) extractOwnerRepo(url string) (string, string, error) {
-	// Handle different GitHub URL formats
-	// https://github.com/owner/repo
-	// git@github.com:owner/repo.git
-
-	url = strings.TrimSuffix(url, ".git")
-
-	var parts []string
-	if strings.Contains(url, "github.com/") {
-		parts = strings.Split(url, "github.com/")
-		if len(parts) != 2 {
-			return "", "", fmt.Errorf("invalid GitHub URL format: %s", url)
+// versionsFromReleaseBodyRegex gets versions from releases with bodies matching the supplied regex
+func versionsFromReleaseBodyRegex(releases []*github.RepositoryRelease, regex *regexp.Regexp) (versionStrings []string) {
+	for _, release := range releases {
+		if regex.MatchString(release.GetBody()) {
+			versionStrings = append(versionStrings, release.GetTagName())
 		}
-		pathParts := strings.Split(parts[1], "/")
-		if len(pathParts) < 2 {
-			return "", "", fmt.Errorf("invalid GitHub URL format: %s", url)
-		}
-		return pathParts[0], pathParts[1], nil
-	} else if strings.Contains(url, "github.com:") {
-		parts = strings.Split(url, "github.com:")
-		if len(parts) != 2 {
-			return "", "", fmt.Errorf("invalid GitHub URL format: %s", url)
-		}
-		pathParts := strings.Split(parts[1], "/")
-		if len(pathParts) < 2 {
-			return "", "", fmt.Errorf("invalid GitHub URL format: %s", url)
-		}
-		return pathParts[0], pathParts[1], nil
 	}
-
-	return "", "", fmt.Errorf("unsupported GitHub URL format: %s", url)
+	return versionStrings
 }
 
-// getReleases gets releases from GitHub API
-func (c *Client) getReleases(ctx context.Context, owner, repo string) ([]Release, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/releases", c.baseURL, owner, repo)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+// setOwnerAndRepo extracts owner and repo from a GitHub URL
+func (c *Client) setOwnerAndRepo() (err error) {
+	matches := githubRepoAndOwnerFromURLRegex.FindStringSubmatch(c.repoURL)
+	if len(matches) != 3 {
+		return fmt.Errorf("unsupported GitHub URL format: %s", c.repoURL)
 	}
 
-	// Add headers for better API usage
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "solana-validator-version-sync")
+	c.repoOwner = matches[1]
+	c.repoName = matches[2]
 
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API returned status: %d", resp.StatusCode)
-	}
-
-	var releases []Release
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return releases, nil
+	return nil
 }

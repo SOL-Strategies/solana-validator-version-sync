@@ -1,10 +1,18 @@
 package cmd
 
 import (
+	_ "embed"
+	"strings"
+
 	"github.com/charmbracelet/log"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/config"
 	"github.com/spf13/cobra"
 )
+
+//go:embed version.txt
+var versionFile string
+
+var version = strings.TrimSpace(strings.Split(versionFile, "\n")[0])
 
 var (
 	configFile   string
@@ -13,8 +21,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "solana-validator-version-sync",
-	Short: "Version sync manager for Solana validators",
+	Use:     "solana-validator-version-sync",
+	Short:   "Version sync manager for Solana validators",
+	Version: version,
 	Long: `Solana Validator Version Sync is a version synchronization manager for Solana validators.
 It monitors the validator's current version and syncs it with the latest available versions.`,
 	SilenceUsage:  true,
