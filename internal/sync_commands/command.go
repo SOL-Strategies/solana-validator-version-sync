@@ -156,14 +156,26 @@ func (c *Command) exec(opts ExecOptions) (err error) {
 		return nil
 	}
 
+	// doing something wrong here, but can't see it so make sure args exclude blank args
+	sanitizedArgs := []string{}
+	execLogger.Debug("sanitizing args", "args", opts.Args)
+	for _, arg := range opts.Args {
+		if strings.TrimSpace(arg) == "" {
+			continue
+		}
+		sanitizedArgs = append(sanitizedArgs, arg)
+	}
+	sanitizedArgsJoined := strings.TrimSpace(strings.Join(sanitizedArgs, " "))
+	execLogger.Debug("sanitized args", "args", opts.Args, "sanitizedArgs", sanitizedArgs)
+
 	execLogger.With(
 		"cmd", opts.Cmd,
-		"args", strings.TrimSpace(strings.Join(opts.Args, " ")),
+		"args", sanitizedArgsJoined,
 		"env", opts.Environment,
 	).Info("running")
 
 	// run it
-	cmd := exec.Command(opts.Cmd, opts.Args...)
+	cmd := exec.Command(opts.Cmd, sanitizedArgs...)
 	cmd.Env = opts.EnvironmentSlice()
 
 	if opts.StreamOutput {
