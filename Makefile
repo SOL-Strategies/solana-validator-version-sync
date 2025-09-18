@@ -43,15 +43,15 @@ build-all:
 	@echo "Generating checksums..."
 	@cd $(BUILD_DIR) && \
 	for binary in $(BINARY_NAME)-*; do \
-		if [ -f "$$binary" ]; then \
+		if [ -f "$$binary" ] && [[ ! "$$binary" == *.sha256 ]]; then \
 			echo "Generating checksum for $$binary..."; \
-			sha256sum "$$binary" | cut -d' ' -f1 > "$$binary.sha256"; \
+			sha256sum "$$binary" > "$$binary.sha256"; \
 		fi; \
 	done
 	@echo "Compressing binaries..."
 	@cd $(BUILD_DIR) && \
 	for binary in $(BINARY_NAME)-*; do \
-		if [ -f "$$binary" ]; then \
+		if [ -f "$$binary" ] && [[ ! "$$binary" == *.sha256 ]]; then \
 			echo "Compressing $$binary..."; \
 			gzip "$$binary"; \
 		fi; \
