@@ -8,17 +8,25 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 )
 
+var (
+	stderrStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("124"))
+	stdoutStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("28"))
+)
+
 type ExecOptions struct {
-	CommandIndex int
-	Disabled     bool
-	AllowFailure bool
-	Cmd          string
-	Args         []string
-	Environment  map[string]string
-	StreamOutput bool
+	ExecLogger    *log.Logger
+	CommandIndex  int
+	CommandsCount int
+	Disabled      bool
+	AllowFailure  bool
+	Cmd           string
+	Args          []string
+	Environment   map[string]string
+	StreamOutput  bool
 }
 
 // Command is a command to run, contains valid templated strings
@@ -40,6 +48,7 @@ type Command struct {
 // CommandTemplateData represents the data available for command template interpolation
 type CommandTemplateData struct {
 	CommandIndex                int
+	CommandsCount               int
 	ValidatorClient             string
 	ValidatorRPCURL             string
 	ValidatorRole               string
@@ -47,7 +56,6 @@ type CommandTemplateData struct {
 	ValidatorRoleIsActive       bool
 	ValidatorIdentityPublicKey  string
 	ClusterName                 string
-	Hostname                    string
 	VersionFrom                 string
 	VersionTo                   string
 	SyncIsSFDPComplianceEnabled bool
@@ -109,7 +117,11 @@ func (c *Command) ExecuteWithData(data CommandTemplateData) (err error) {
 		compiledEnvironment map[string]string
 	)
 
-	c.logger.Debugf("executing command with data %+v", data)
+	execLogger := log.WithPrefix(
+		fmt.Sprintf("sync:commands[%d/%d %s]", data.CommandIndex+1, data.CommandsCount, c.Name),
+	)
+
+	execLogger.Debugf("executing command with data %+v", data)
 
 	// compiled command
 	cmdBuf := bytes.Buffer{}
@@ -133,32 +145,26 @@ func (c *Command) ExecuteWithData(data CommandTemplateData) (err error) {
 	}
 
 	if c.Disabled {
-		c.logger.Info("command is disabled, skipping")
+		execLogger.Warn("command is disabled, skipping")
 		return nil
 	}
 
 	return c.exec(ExecOptions{
-		CommandIndex: data.CommandIndex,
-		Disabled:     c.Disabled,
-		AllowFailure: c.AllowFailure,
-		Cmd:          compiledCmd,
-		Args:         compiledArgs,
-		Environment:  compiledEnvironment,
-		StreamOutput: c.StreamOutput,
+		ExecLogger:    execLogger,
+		CommandIndex:  data.CommandIndex,
+		CommandsCount: data.CommandsCount,
+		AllowFailure:  c.AllowFailure,
+		Cmd:           compiledCmd,
+		Args:          compiledArgs,
+		Environment:   compiledEnvironment,
+		StreamOutput:  c.StreamOutput,
 	})
 }
 
 func (c *Command) exec(opts ExecOptions) (err error) {
-	execLogger := log.WithPrefix(fmt.Sprintf("sync.command[%d.%s]", opts.CommandIndex, c.Name))
-
-	if opts.Disabled {
-		execLogger.Info("command is disabled, skipping")
-		return nil
-	}
-
 	// doing something wrong here, but can't see it so make sure args exclude blank args
 	sanitizedArgs := []string{}
-	execLogger.Debug("sanitizing args", "args", opts.Args)
+	opts.ExecLogger.Debug("sanitizing args", "args", opts.Args)
 	for _, arg := range opts.Args {
 		if strings.TrimSpace(arg) == "" {
 			continue
@@ -166,9 +172,9 @@ func (c *Command) exec(opts ExecOptions) (err error) {
 		sanitizedArgs = append(sanitizedArgs, arg)
 	}
 	sanitizedArgsJoined := strings.TrimSpace(strings.Join(sanitizedArgs, " "))
-	execLogger.Debug("sanitized args", "args", opts.Args, "sanitizedArgs", sanitizedArgs)
+	opts.ExecLogger.Debug("sanitized args", "args", opts.Args, "sanitizedArgs", sanitizedArgs)
 
-	execLogger.With(
+	opts.ExecLogger.With(
 		"cmd", opts.Cmd,
 		"args", sanitizedArgsJoined,
 		"env", opts.Environment,
@@ -193,20 +199,25 @@ func (c *Command) exec(opts ExecOptions) (err error) {
 		err = cmd.Start()
 
 		if err != nil && c.AllowFailure {
-			execLogger.Error("failed to start command with allow failure enabled - continuing", "error", err)
+			opts.ExecLogger.Error("failed to start command with allow failure enabled - continuing", "error", err)
 			return nil
 		}
 
-		if err != nil && !opts.AllowFailure {
-			execLogger.Error("failed to start command - not allowed to fail", "error", err)
-			return err
+		if err != nil {
+			return fmt.Errorf("failed to start command: %w", err)
 		}
+
+		// get the command pid (only after successful start)
+		pid := cmd.Process.Pid
+		opts.ExecLogger.Debug("command pid", "pid", pid)
 
 		// Stream stdout
 		go func() {
 			scanner := bufio.NewScanner(stdout)
 			for scanner.Scan() {
-				execLogger.Info(scanner.Text(), "stream", "stdout")
+				opts.ExecLogger.Info(
+					styledStreamOutputString("stdout", scanner.Text()),
+				)
 			}
 		}()
 
@@ -214,7 +225,9 @@ func (c *Command) exec(opts ExecOptions) (err error) {
 		go func() {
 			scanner := bufio.NewScanner(stderr)
 			for scanner.Scan() {
-				execLogger.Warn(scanner.Text(), "stream", "stderr")
+				opts.ExecLogger.Info(
+					styledStreamOutputString("stderr", scanner.Text()),
+				)
 			}
 		}()
 
@@ -224,18 +237,16 @@ func (c *Command) exec(opts ExecOptions) (err error) {
 		err = cmd.Run()
 		// if failed and not allowed to fail, return error
 		if err != nil && !opts.AllowFailure {
-			execLogger.Error("command failed")
+			opts.ExecLogger.Error("failed")
 			return err
 		}
 
 		// if failed and allowed to fail say so and continue
 		if err != nil && opts.AllowFailure {
-			execLogger.Error("command failed with allow failure enabled - continuing", "error", err)
+			opts.ExecLogger.Warn(fmt.Sprintf("failed with sync.commands[%d].allow_failure=true - continuing", opts.CommandIndex), "error", err)
 			return nil
 		}
 	}
-
-	execLogger.Info("command completed successfully")
 
 	return nil
 }
@@ -247,4 +258,13 @@ func (o *ExecOptions) EnvironmentSlice() []string {
 		env = append(env, fmt.Sprintf("%s=%s", strings.TrimSpace(k), strings.TrimSpace(v)))
 	}
 	return env
+}
+
+func styledStreamOutputString(stream string, text string) string {
+	// separater is faint gray, faint
+	streamStyle := stdoutStyle
+	if stream == "stderr" {
+		streamStyle = stderrStyle
+	}
+	return fmt.Sprintf("%s %s", streamStyle.Render(">"), text)
 }

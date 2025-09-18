@@ -93,7 +93,6 @@ func TestCommandTemplateData_StructFields(t *testing.T) {
 		ValidatorRoleIsActive:       true,
 		ValidatorIdentityPublicKey:  "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
 		ClusterName:                 "mainnet-beta",
-		Hostname:                    "validator-01",
 		VersionFrom:                 "1.17.0",
 		VersionTo:                   "1.18.0",
 		SyncIsSFDPComplianceEnabled: true,
@@ -122,9 +121,6 @@ func TestCommandTemplateData_StructFields(t *testing.T) {
 	}
 	if data.ClusterName != "mainnet-beta" {
 		t.Errorf("Expected ClusterName to be mainnet-beta, got %s", data.ClusterName)
-	}
-	if data.Hostname != "validator-01" {
-		t.Errorf("Expected Hostname to be validator-01, got %s", data.Hostname)
 	}
 	if data.VersionFrom != "1.17.0" {
 		t.Errorf("Expected VersionFrom to be 1.17.0, got %s", data.VersionFrom)

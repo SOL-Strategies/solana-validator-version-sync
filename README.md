@@ -45,7 +45,7 @@ solana-validator-version-sync --config config.yaml run --on-interval 1h
 
 ## Configuration
 
-Create a configuration file (e.g., `config.yml`) with the following options:
+Create a configuration file (e.g., `config.yml`) with the following options (see [config.yml](config.yml) for a working example):
 
 ```yaml
 log:
@@ -82,8 +82,8 @@ sync:
   # Commands to run when there is a version change. They will run in the order they are declared.  
   # cmd, args, and environment values can be template strings and will be interpolated with the following variables:
   #  .ClusterName                 cluster the validator is running on
-  #  .CommandIndex                index of the command in the commands array
-  #  .Hostname                    hostname of the validator
+  #  .CommandIndex                index of the command in the commands array (zero-based)
+  #  .CommandsCount               count of commands in the commands array
   #  .SyncIsSFDPComplianceEnabled true|false (value of sync.enable_sfdp_compliance)
   #  .ValidatorClient             client name (value of validator.client)
   #  .ValidatorIdentityPublicKey  public key of the validator's identity as reported by .ValidatorRPCURL
@@ -94,14 +94,14 @@ sync:
   #  .VersionFrom                 current running version as reported by .ValidatorRPCURL
   #  .VersionTo:                  sync target version
   commands:
-    - name: "build validator source"                     # required - vanity name for logging purposes
+    - name: "build"                                      # required - vanity name for logging purposes
       allow_failure: false                               # optional, default:false - when true, errors are logged and subsequent commands executed
       stream_output: true                                # optional, default: false - when true, command output streamed
       disabled: false                                    # optional, default: false - when true, command skipped
       cmd: /home/solana/scripts/build-solana.sh          # required, supports templated string
       args: ["build", "--client={{ .ValidatorClient }}"] # optional, supports templated strings
       environment:                                       # optional, environment variables to pass to cmd, values support templated strings
-        TO_VERSION: "{{ .VerstionTo }}"
+        TO_VERSION: "{{ .VersionTo }}"
     # ...
 ```
 

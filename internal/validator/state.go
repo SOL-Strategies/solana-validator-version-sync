@@ -9,5 +9,4 @@ type State struct {
 	HealthStatus      string
 	IdentityPublicKey string
 	Version           *version.Version
-	Hostname          string
 }

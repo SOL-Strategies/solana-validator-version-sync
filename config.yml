@@ -24,10 +24,38 @@ sync:
       allow_failure: false
       stream_output: true
       disabled: false
-      cmd: local-test/solana-validator-source.sh
+      cmd: ./demo.sh
+      args: ["build", "{{ .ValidatorClient }}@{{ .VersionTo }}"]
+
+    - name: install
+      allow_failure: false
+      stream_output: true
+      disabled: false
+      cmd: ./demo.sh
+      args: ["install", "{{ .ValidatorClient }}@{{ .VersionTo }}"]
+
+    - name: restart
+      allow_failure: false
+      stream_output: true
+      disabled: false
+      cmd: ./demo.sh
       args:
         [
-          "build",
-          "--client={{ .ValidatorClient }}",
-          "--version={{ .VersionTo }}",
+          "restart",
+          "sol.service",
+          "{{ .ValidatorClient }} {{ .VersionFrom }} -> {{ .VersionTo }}",
         ]
+
+    - name: monitor
+      allow_failure: false
+      stream_output: true
+      disabled: false
+      cmd: ./demo.sh
+      args: ["monitor", "{{ .ValidatorRPCURL }}"]
+
+    - name: notify
+      allow_failure: false
+      stream_output: true
+      disabled: false
+      cmd: ./demo.sh
+      args: ["notify", "{{ .VersionFrom }} -> {{ .VersionTo }}"]

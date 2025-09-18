@@ -96,5 +96,10 @@ func (l *Log) ConfigureWithLevelString(logLevel string) {
 	styles.Levels[log.ErrorLevel] = styles.Levels[log.ErrorLevel].Foreground(lipgloss.Color("196"))
 	styles.Levels[log.FatalLevel] = styles.Levels[log.FatalLevel].Foreground(lipgloss.Color("208"))
 
+	// style stream key values
+	errorValueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("204"))
+	styles.Values["err"] = errorValueStyle
+	styles.Values["error"] = errorValueStyle
+
 	log.SetStyles(styles)
 }

@@ -14,7 +14,6 @@ func TestState_StructFields(t *testing.T) {
 		HealthStatus:      "ok",
 		IdentityPublicKey: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
 		Version:           v1,
-		Hostname:          "validator-01",
 	}
 
 	if state.Cluster != "mainnet-beta" {
@@ -31,9 +30,6 @@ func TestState_StructFields(t *testing.T) {
 	}
 	if state.Version.String() != "1.18.0" {
 		t.Errorf("Expected Version to be 1.18.0, got %s", state.Version.String())
-	}
-	if state.Hostname != "validator-01" {
-		t.Errorf("Expected Hostname to be validator-01, got %s", state.Hostname)
 	}
 }
 
@@ -54,9 +50,6 @@ func TestState_EmptyState(t *testing.T) {
 	}
 	if state.Version != nil {
 		t.Errorf("Expected nil Version, got %v", state.Version)
-	}
-	if state.Hostname != "" {
-		t.Errorf("Expected empty Hostname, got %s", state.Hostname)
 	}
 }
 
@@ -243,47 +236,6 @@ func TestState_ClusterNames(t *testing.T) {
 
 			if state.Cluster != tt.expected {
 				t.Errorf("Expected Cluster %s, got %s", tt.expected, state.Cluster)
-			}
-		})
-	}
-}
-
-func TestState_HostnameFormats(t *testing.T) {
-	tests := []struct {
-		name     string
-		hostname string
-		expected string
-	}{
-		{
-			name:     "simple hostname",
-			hostname: "validator-01",
-			expected: "validator-01",
-		},
-		{
-			name:     "hostname with domain",
-			hostname: "validator-01.example.com",
-			expected: "validator-01.example.com",
-		},
-		{
-			name:     "IP address",
-			hostname: "192.168.1.100",
-			expected: "192.168.1.100",
-		},
-		{
-			name:     "empty hostname",
-			hostname: "",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			state := State{
-				Hostname: tt.hostname,
-			}
-
-			if state.Hostname != tt.expected {
-				t.Errorf("Expected Hostname %s, got %s", tt.expected, state.Hostname)
 			}
 		})
 	}
