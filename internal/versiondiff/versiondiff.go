@@ -4,6 +4,17 @@ import (
 	"github.com/hashicorp/go-version"
 )
 
+const (
+	// DirectionSame is the direction of the version diff when the from and to versions are the same
+	DirectionSame = "same"
+	// DirectionUpgrade is the direction of the version diff when the from version is less than the to version
+	DirectionUpgrade = "upgrade"
+	// DirectionDowngrade is the direction of the version diff when the from version is greater than the to version
+	DirectionDowngrade = "downgrade"
+	// DirectionUnknown is the direction of the version diff when the from and to versions are unknown
+	DirectionUnknown = "unknown"
+)
+
 // VersionDiff represents the difference between two versions
 type VersionDiff struct {
 	From *version.Version
@@ -43,13 +54,27 @@ func (v *VersionDiff) HasPatchChange() bool {
 // Direction gets the direction of the version diff as a string
 func (v *VersionDiff) Direction() string {
 	if v.IsSameVersion() {
-		return "same"
+		return DirectionSame
 	}
 	if v.IsUpgrade() {
-		return "upgrade"
+		return DirectionUpgrade
 	}
 	if v.IsDowngrade() {
-		return "downgrade"
+		return DirectionDowngrade
 	}
-	return "unknown"
+	return DirectionUnknown
+}
+
+// DirectionEmoji gets the direction of the version diff as an emoji
+func (v *VersionDiff) DirectionEmoji() string {
+	switch v.Direction() {
+	case DirectionSame:
+		return "🔄"
+	case DirectionUpgrade:
+		return "⬆️"
+	case DirectionDowngrade:
+		return "⬇️"
+	default:
+		return "❓"
+	}
 }
