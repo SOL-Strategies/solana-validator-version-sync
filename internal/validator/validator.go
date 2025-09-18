@@ -2,7 +2,6 @@ package validator
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/charmbracelet/log"
 	"github.com/hashicorp/go-version"
@@ -99,6 +98,7 @@ func (v *Validator) SyncVersion() (err error) {
 		"client", v.cfg.Client,
 		"version", v.State.Version.String(),
 		"role", v.Role(),
+		"pubKey", v.State.IdentityPublicKey,
 	)
 
 	// decide if we should sync based on the validator's role and the enabled when active config
@@ -110,7 +110,7 @@ func (v *Validator) SyncVersion() (err error) {
 		}
 		syncLogger.Warnf("validator is %s and sync.enabled_when_active=%t running with scissors ⚠️🏃‍♂️✂️  - syncing", v.Role(), v.syncConfig.EnabledWhenActive)
 	case RolePassive:
-		syncLogger.Info("validator is passive - syncing")
+		syncLogger.Infof("validator is %s - syncing", v.Role())
 	default:
 		return fmt.Errorf("validator identity public key %s is not %s or %s - skipping sync", v.State.IdentityPublicKey, RoleActive, RolePassive)
 	}
@@ -140,7 +140,7 @@ func (v *Validator) SyncVersion() (err error) {
 
 		// if target version is not within sfdp constraints, update it to get the max version sfdp allows
 		if sfdpRequirements.Constraints.Check(versionDiff.To.Core()) {
-			syncLogger.Info("target version is within SFDP constraints",
+			syncLogger.Debug("target version is within SFDP constraints",
 				"targetVersion", versionDiff.To.Core().String(),
 				"sfdpRequirement", sfdpRequirements.ConstraintsString,
 			)
@@ -201,11 +201,18 @@ func (v *Validator) SyncVersion() (err error) {
 		versionDiff.From.Core().String(), versionDiff.To.Core().String(),
 	)
 
+	commandsCount := len(v.syncConfig.Commands)
+	if commandsCount == 0 {
+		syncLogger.Warn("no configured commands to execute - skipping")
+		return nil
+	}
+
 	// create the commands
-	syncLogger.Infof("executing %d commands", len(v.syncConfig.Commands))
+	syncLogger.Infof("executing commands")
 	for cmd_i, cmd := range v.syncConfig.Commands {
 		err := cmd.ExecuteWithData(sync_commands.CommandTemplateData{
 			CommandIndex:                cmd_i,
+			CommandsCount:               commandsCount,
 			ValidatorClient:             v.cfg.Client,
 			ValidatorRPCURL:             v.cfg.RPCURL,
 			ValidatorRole:               v.Role(),
@@ -213,7 +220,6 @@ func (v *Validator) SyncVersion() (err error) {
 			ValidatorRoleIsActive:       v.IsActive(),
 			ValidatorIdentityPublicKey:  v.State.IdentityPublicKey,
 			ClusterName:                 v.State.Cluster,
-			Hostname:                    v.State.Hostname,
 			VersionFrom:                 versionDiff.From.Core().String(),
 			VersionTo:                   versionDiff.To.Core().String(),
 			SyncIsSFDPComplianceEnabled: v.syncConfig.EnableSFDPCompliance,
@@ -223,20 +229,13 @@ func (v *Validator) SyncVersion() (err error) {
 		}
 	}
 
-	syncLogger.Info("commands executed successfully")
+	syncLogger.Infof("commands executed successfully")
 	return nil
 }
 
 // refreshState refreshes the validator's state
 func (v *Validator) refreshState() error {
 	v.logger.Debug("refreshing validator state")
-
-	// get the validator's hostname
-	hostname, err := os.Hostname()
-	if err != nil {
-		return err
-	}
-	v.State.Hostname = hostname
 
 	// get the validator's version string
 	versionString, err := v.rpcClient.GetVersion()
