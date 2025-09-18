@@ -18,13 +18,12 @@ type Requirements struct {
 	FiredancerMaxVersion       string `json:"firedancer_max_version"`
 	InheritedFromPreviousEpoch bool   `json:"inherited_from_previous_epoch"`
 
-	Client            string
-	ConstraintsString string
-	Constraints       version.Constraints
-	MaxVersion        *version.Version
-	MinVersion        *version.Version
-	HasMaxVersion     bool
-	HasMinVersion     bool
+	Client        string
+	Constraints   version.Constraints
+	MaxVersion    *version.Version
+	MinVersion    *version.Version
+	HasMaxVersion bool
+	HasMinVersion bool
 }
 
 // SetClient sets the client and limits for it
@@ -65,10 +64,10 @@ func (r *Requirements) SetClient(client string) (err error) {
 	}
 
 	// set it
-	r.ConstraintsString = strings.Join(constraintsStrings, ",")
+	constraintsString := strings.Join(constraintsStrings, ",")
 
 	// build constraints from string
-	r.Constraints, err = version.NewConstraint(r.ConstraintsString)
+	r.Constraints, err = version.NewConstraint(constraintsString)
 	if err != nil {
 		return fmt.Errorf("failed to parse constraints: %w", err)
 	}

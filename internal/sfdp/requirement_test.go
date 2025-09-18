@@ -16,7 +16,6 @@ func TestRequirements_StructFields(t *testing.T) {
 		FiredancerMaxVersion:       "0.1.2",
 		InheritedFromPreviousEpoch: false,
 		Client:                     constants.ClientNameAgave,
-		ConstraintsString:          ">= 1.18.0, <= 1.18.5",
 		HasMaxVersion:              true,
 		HasMinVersion:              true,
 	}
@@ -45,9 +44,7 @@ func TestRequirements_StructFields(t *testing.T) {
 	if req.Client != constants.ClientNameAgave {
 		t.Errorf("Expected Client to be %s, got %s", constants.ClientNameAgave, req.Client)
 	}
-	if req.ConstraintsString != ">= 1.18.0, <= 1.18.5" {
-		t.Errorf("Expected ConstraintsString to be '>= 1.18.0, <= 1.18.5', got %s", req.ConstraintsString)
-	}
+	// Note: Constraints field is not set in this test, so we skip testing it
 	if req.HasMaxVersion != true {
 		t.Errorf("Expected HasMaxVersion to be true, got %v", req.HasMaxVersion)
 	}
@@ -230,18 +227,18 @@ func TestRequirements_SetClient(t *testing.T) {
 				// Test constraints string
 				if tt.expectedHasMin && tt.expectedHasMax {
 					expectedConstraints := ">= " + tt.expectedMinVersion + ",<= " + tt.expectedMaxVersion
-					if req.ConstraintsString != expectedConstraints {
-						t.Errorf("SetClient() ConstraintsString = %v, want %v", req.ConstraintsString, expectedConstraints)
+					if req.Constraints.String() != expectedConstraints {
+						t.Errorf("SetClient() Constraints.String() = %v, want %v", req.Constraints.String(), expectedConstraints)
 					}
 				} else if tt.expectedHasMin {
 					expectedConstraints := ">= " + tt.expectedMinVersion
-					if req.ConstraintsString != expectedConstraints {
-						t.Errorf("SetClient() ConstraintsString = %v, want %v", req.ConstraintsString, expectedConstraints)
+					if req.Constraints.String() != expectedConstraints {
+						t.Errorf("SetClient() Constraints.String() = %v, want %v", req.Constraints.String(), expectedConstraints)
 					}
 				} else if tt.expectedHasMax {
 					expectedConstraints := "<= " + tt.expectedMaxVersion
-					if req.ConstraintsString != expectedConstraints {
-						t.Errorf("SetClient() ConstraintsString = %v, want %v", req.ConstraintsString, expectedConstraints)
+					if req.Constraints.String() != expectedConstraints {
+						t.Errorf("SetClient() Constraints.String() = %v, want %v", req.Constraints.String(), expectedConstraints)
 					}
 				}
 
@@ -309,8 +306,8 @@ func TestRequirements_SetClient_ConstraintsString(t *testing.T) {
 				t.Errorf("SetClient() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			if !tt.wantErr && req.ConstraintsString != tt.expectedConstraints {
-				t.Errorf("SetClient() ConstraintsString = %v, want %v", req.ConstraintsString, tt.expectedConstraints)
+			if !tt.wantErr && req.Constraints.String() != tt.expectedConstraints {
+				t.Errorf("SetClient() Constraints.String() = %v, want %v", req.Constraints.String(), tt.expectedConstraints)
 			}
 		})
 	}

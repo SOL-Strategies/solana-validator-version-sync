@@ -35,12 +35,13 @@ type Validator struct {
 	PassiveIdentityPublicKey string
 	State                    State
 
-	syncConfig   config.Sync
-	cfg          config.Validator
-	logger       *log.Logger
-	rpcClient    *rpc.Client
-	sfdpClient   *sfdp.Client
-	githubClient *github.Client
+	versionConstraint version.Constraints
+	syncConfig        config.Sync
+	cfg               config.Validator
+	logger            *log.Logger
+	rpcClient         *rpc.Client
+	sfdpClient        *sfdp.Client
+	githubClient      *github.Client
 }
 
 // New creates a new Validator
@@ -54,6 +55,12 @@ func New(opts Options) (v *Validator, err error) {
 		syncConfig:               opts.SyncConfig,
 		cfg:                      opts.ValidatorConfig,
 		logger:                   log.WithPrefix("validator"),
+	}
+
+	// set supplied version constraint
+	err = v.setVersionConstraint()
+	if err != nil {
+		return nil, err
 	}
 
 	// Create clients
@@ -76,6 +83,19 @@ func New(opts Options) (v *Validator, err error) {
 	}
 
 	return v, nil
+}
+
+// setversionConstraint sets the client version constraint
+func (v *Validator) setVersionConstraint() (err error) {
+	parsedConstraint, err := version.NewConstraint(v.cfg.VersionConstraint)
+	if err != nil {
+		return fmt.Errorf("failed to parse client version constraint: %w", err)
+	}
+	v.versionConstraint = parsedConstraint
+
+	v.logger.Debug("set version constraint", "constraint", v.versionConstraint.String())
+
+	return nil
 }
 
 // SyncVersion syncs the validator's version
@@ -136,26 +156,26 @@ func (v *Validator) SyncVersion() (err error) {
 			return err
 		}
 
-		syncLogger.Debug("got latest requirements from SFDP", "sfdpRequirements", sfdpRequirements.ConstraintsString)
+		syncLogger.Debug("got latest requirements from SFDP", "sfdpRequirements", sfdpRequirements.Constraints.String())
 
 		// if target version is not within sfdp constraints, update it to get the max version sfdp allows
 		if sfdpRequirements.Constraints.Check(versionDiff.To.Core()) {
 			syncLogger.Debug("target version is within SFDP constraints",
 				"targetVersion", versionDiff.To.Core().String(),
-				"sfdpRequirement", sfdpRequirements.ConstraintsString,
+				"sfdpRequirement", sfdpRequirements.Constraints.String(),
 			)
 		} else if sfdpRequirements.HasMaxVersion {
 			syncLogger.Warn("target version is not within SFDP constraints - updating to max allowed SFDP version",
 				"targetVersion", versionDiff.To.Core().String(),
 				"sfdpMaxVersion", sfdpRequirements.MaxVersion.String(),
-				"sfdpRequirement", sfdpRequirements.ConstraintsString,
+				"sfdpRequirement", sfdpRequirements.Constraints.String(),
 			)
 			versionDiff.To = sfdpRequirements.MaxVersion
 		} else if sfdpRequirements.HasMinVersion {
 			syncLogger.Warn("target version is not within SFDP constraints - updating to min allowed SFDP version",
 				"targetVersion", versionDiff.To.Core().String(),
 				"sfdpMinVersion", sfdpRequirements.MinVersion.String(),
-				"sfdpRequirement", sfdpRequirements.ConstraintsString,
+				"sfdpRequirement", sfdpRequirements.Constraints.String(),
 			)
 			versionDiff.To = sfdpRequirements.MinVersion
 		}
@@ -170,35 +190,19 @@ func (v *Validator) SyncVersion() (err error) {
 		return nil
 	}
 
-	// if not allowed to sync major, minor, or patch, - warn and do nothing
-	if !v.syncConfig.AllowedSemverChanges.Major && !v.syncConfig.AllowedSemverChanges.Minor && !v.syncConfig.AllowedSemverChanges.Patch {
-		syncLogger.Warn("sync.allowed_semver_changes config settings do not allow any version changes - not syncing")
-		return nil
-	}
-
-	// target major version but not allowed - warn and do nothing
-	if versionDiff.HasMajorChange() && !v.syncConfig.AllowedSemverChanges.Major {
-		syncLogger.Warn("target version contains major semver change and not allowed from config- not syncing")
-		return nil
-	}
-
-	// target minor version but not allowed - warn and do nothing
-	if versionDiff.HasMinorChange() && !v.syncConfig.AllowedSemverChanges.Minor {
-		syncLogger.Warn("target version contains minor semver change and not allowed from config- not syncing")
-		return nil
-	}
-
-	// target patch version but not allowed - warn and do nothing
-	if versionDiff.HasPatchChange() && !v.syncConfig.AllowedSemverChanges.Patch {
-		syncLogger.Warn("target version contains patch semver change and not allowed from config- not syncing")
-		return nil
+	// if target version outside of declared constraint, error out
+	if !v.versionConstraint.Check(versionDiff.To.Core()) {
+		return fmt.Errorf("target version %s is outside of validator.version_constraint %s", versionDiff.To.Core().String(), v.versionConstraint.String())
 	}
 
 	// by now we know we need to sync and are allowed to sync to the target version
 	syncLogger = syncLogger.With("syncDirection", versionDiff.Direction())
-	syncLogger.Infof("%v  %s required v%s -> v%s",
-		versionDiff.DirectionEmoji(), versionDiff.Direction(),
-		versionDiff.From.Core().String(), versionDiff.To.Core().String(),
+	syncLogger.Info(
+		fmt.Sprintf("%v  %s required v%s -> v%s",
+			versionDiff.DirectionEmoji(), versionDiff.Direction(),
+			versionDiff.From.Core().String(), versionDiff.To.Core().String(),
+		),
+		"versionConstraint", v.versionConstraint.String(),
 	)
 
 	commandsCount := len(v.syncConfig.Commands)

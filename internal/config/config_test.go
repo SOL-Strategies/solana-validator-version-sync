@@ -159,11 +159,6 @@ func TestConfig_Initialize(t *testing.T) {
 				Sync: Sync{
 					EnabledWhenActive:    true,
 					EnableSFDPCompliance: false,
-					AllowedSemverChanges: AllowedSemverChanges{
-						Major: false,
-						Minor: true,
-						Patch: true,
-					},
 				},
 			},
 			wantErr: false,

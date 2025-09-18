@@ -14,6 +14,8 @@ type Validator struct {
 	Client string `koanf:"client"`
 	// RPCURL is the URL of the validator's RPC endpoint
 	RPCURL string `koanf:"rpc_url"`
+	// VersionConstraint is the constraint for the client version
+	VersionConstraint string `koanf:"version_constraint"`
 	// Identities are the paths to the active and passive identity keyfiles
 	Identities Identities `koanf:"identities"`
 }

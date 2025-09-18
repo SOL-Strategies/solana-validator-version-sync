@@ -171,12 +171,11 @@ func (c *Command) exec(opts ExecOptions) (err error) {
 		}
 		sanitizedArgs = append(sanitizedArgs, arg)
 	}
-	sanitizedArgsJoined := strings.TrimSpace(strings.Join(sanitizedArgs, " "))
 	opts.ExecLogger.Debug("sanitized args", "args", opts.Args, "sanitizedArgs", sanitizedArgs)
 
 	opts.ExecLogger.With(
 		"cmd", opts.Cmd,
-		"args", sanitizedArgsJoined,
+		"args", sanitizedArgs,
 		"env", opts.Environment,
 	).Info("running")
 

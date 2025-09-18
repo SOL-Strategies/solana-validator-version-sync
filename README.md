@@ -53,8 +53,9 @@ log:
   format: text # optional, default: text, one of text|logfmt|json
 
 validator:
-  client: agave                  # required, one of agave|jito-solana|firedancer
-  rpc_url: http://127.0.0.1:8899 # optional, default: http:127.0.0.1:8899 - local validator rpc URL
+  client: agave                          # required, one of agave|jito-solana|firedancer
+  version_constraint: ">= 2.3.6, < 3.0.0" # required, a valid go-version semver constraint string - ref https://github.com/hashicorp/go-version
+  rpc_url: http://127.0.0.1:8899         # optional, default: http:127.0.0.1:8899 - local validator rpc URL
   identities:
     active: local-test/active-identity.json   # required - path to validator active keypair
     passive: local-test/passive-identity.json # required - path to validator passive keypair
