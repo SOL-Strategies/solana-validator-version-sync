@@ -17,12 +17,7 @@ func TestSync_Validate(t *testing.T) {
 			sync: Sync{
 				EnabledWhenActive:    true,
 				EnableSFDPCompliance: false,
-				AllowedSemverChanges: AllowedSemverChanges{
-					Major: true,
-					Minor: true,
-					Patch: true,
-				},
-				Commands: []sync_commands.Command{},
+				Commands:             []sync_commands.Command{},
 			},
 			wantErr: false,
 		},
@@ -31,26 +26,16 @@ func TestSync_Validate(t *testing.T) {
 			sync: Sync{
 				EnabledWhenActive:    false,
 				EnableSFDPCompliance: true,
-				AllowedSemverChanges: AllowedSemverChanges{
-					Major: false,
-					Minor: false,
-					Patch: false,
-				},
-				Commands: []sync_commands.Command{},
+				Commands:             []sync_commands.Command{},
 			},
 			wantErr: false,
 		},
 		{
-			name: "only patch changes allowed",
+			name: "sync with SFDP compliance enabled",
 			sync: Sync{
 				EnabledWhenActive:    true,
-				EnableSFDPCompliance: false,
-				AllowedSemverChanges: AllowedSemverChanges{
-					Major: false,
-					Minor: false,
-					Patch: true,
-				},
-				Commands: []sync_commands.Command{},
+				EnableSFDPCompliance: true,
+				Commands:             []sync_commands.Command{},
 			},
 			wantErr: false,
 		},
@@ -80,35 +65,12 @@ func TestSync_SetDefaults(t *testing.T) {
 	}
 }
 
-func TestAllowedSemverChanges_StructFields(t *testing.T) {
-	changes := AllowedSemverChanges{
-		Major: true,
-		Minor: false,
-		Patch: true,
-	}
-
-	if changes.Major != true {
-		t.Errorf("Expected Major to be true, got %v", changes.Major)
-	}
-	if changes.Minor != false {
-		t.Errorf("Expected Minor to be false, got %v", changes.Minor)
-	}
-	if changes.Patch != true {
-		t.Errorf("Expected Patch to be true, got %v", changes.Patch)
-	}
-}
-
 func TestSync_StructFields(t *testing.T) {
 	commands := []sync_commands.Command{}
 	sync := Sync{
 		EnabledWhenActive:    true,
 		EnableSFDPCompliance: false,
-		AllowedSemverChanges: AllowedSemverChanges{
-			Major: true,
-			Minor: true,
-			Patch: false,
-		},
-		Commands: commands,
+		Commands:             commands,
 	}
 
 	if sync.EnabledWhenActive != true {
@@ -116,15 +78,6 @@ func TestSync_StructFields(t *testing.T) {
 	}
 	if sync.EnableSFDPCompliance != false {
 		t.Errorf("Expected EnableSFDPCompliance to be false, got %v", sync.EnableSFDPCompliance)
-	}
-	if sync.AllowedSemverChanges.Major != true {
-		t.Errorf("Expected Major to be true, got %v", sync.AllowedSemverChanges.Major)
-	}
-	if sync.AllowedSemverChanges.Minor != true {
-		t.Errorf("Expected Minor to be true, got %v", sync.AllowedSemverChanges.Minor)
-	}
-	if sync.AllowedSemverChanges.Patch != false {
-		t.Errorf("Expected Patch to be false, got %v", sync.AllowedSemverChanges.Patch)
 	}
 	if len(sync.Commands) != 0 {
 		t.Errorf("Expected Commands to be empty, got %v", len(sync.Commands))

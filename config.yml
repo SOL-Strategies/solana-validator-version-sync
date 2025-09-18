@@ -4,6 +4,7 @@ log:
 
 validator:
   client: jito-solana
+  version_constraint: ">= 3.0.0, < 3.1.0"
   rpc_url: http://127.0.0.1:8899
   identities:
     active: local-test/active-identity.json
@@ -14,10 +15,6 @@ cluster:
 
 sync:
   enabled_when_active: true
-  allowed_semver_changes:
-    major: true
-    minor: true
-    patch: true
   enable_sfdp_compliance: true
   commands:
     - name: build

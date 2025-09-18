@@ -214,8 +214,9 @@ func TestNew(t *testing.T) {
 			},
 		},
 		ValidatorConfig: config.Validator{
-			Client: constants.ClientNameAgave,
-			RPCURL: "http://localhost:8899",
+			Client:            constants.ClientNameAgave,
+			RPCURL:            "http://localhost:8899",
+			VersionConstraint: ">= 1.0.0",
 			Identities: config.Identities{
 				ActiveKeyPair:  activeKeypair,
 				PassiveKeyPair: passiveKeypair,
@@ -289,8 +290,9 @@ func TestNew_InvalidCommand(t *testing.T) {
 			},
 		},
 		ValidatorConfig: config.Validator{
-			Client: constants.ClientNameAgave,
-			RPCURL: "http://localhost:8899",
+			Client:            constants.ClientNameAgave,
+			RPCURL:            "http://localhost:8899",
+			VersionConstraint: ">= 1.0.0",
 			Identities: config.Identities{
 				ActiveKeyPair:  activeKeypair,
 				PassiveKeyPair: passiveKeypair,

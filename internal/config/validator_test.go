@@ -19,24 +19,27 @@ func TestValidator_Validate(t *testing.T) {
 		{
 			name: "valid agave validator",
 			validator: Validator{
-				Client: constants.ClientNameAgave,
-				RPCURL: "http://localhost:8899",
+				Client:            constants.ClientNameAgave,
+				RPCURL:            "http://localhost:8899",
+				VersionConstraint: ">= 1.0.0",
 			},
 			wantErr: false,
 		},
 		{
 			name: "valid jito-solana validator",
 			validator: Validator{
-				Client: constants.ClientNameJitoSolana,
-				RPCURL: "https://api.mainnet-beta.solana.com",
+				Client:            constants.ClientNameJitoSolana,
+				RPCURL:            "https://api.mainnet-beta.solana.com",
+				VersionConstraint: ">= 3.0.0, < 3.0.1",
 			},
 			wantErr: false,
 		},
 		{
 			name: "valid firedancer validator",
 			validator: Validator{
-				Client: constants.ClientNameFiredancer,
-				RPCURL: "http://127.0.0.1:8899",
+				Client:            constants.ClientNameFiredancer,
+				RPCURL:            "http://127.0.0.1:8899",
+				VersionConstraint: ">= 0.1.0",
 			},
 			wantErr: false,
 		},
@@ -160,8 +163,9 @@ func TestIdentities_Load(t *testing.T) {
 
 func TestValidator_StructFields(t *testing.T) {
 	validator := Validator{
-		Client: constants.ClientNameAgave,
-		RPCURL: "http://localhost:8899",
+		Client:            constants.ClientNameAgave,
+		RPCURL:            "http://localhost:8899",
+		VersionConstraint: ">= 1.0.0",
 		Identities: Identities{
 			ActiveKeyPairFile:  "/path/to/active.json",
 			PassiveKeyPairFile: "/path/to/passive.json",
@@ -173,6 +177,9 @@ func TestValidator_StructFields(t *testing.T) {
 	}
 	if validator.RPCURL != "http://localhost:8899" {
 		t.Errorf("Expected RPCURL to be http://localhost:8899, got %s", validator.RPCURL)
+	}
+	if validator.VersionConstraint != ">= 1.0.0" {
+		t.Errorf("Expected VersionConstraint to be >= 1.0.0, got %s", validator.VersionConstraint)
 	}
 	if validator.Identities.ActiveKeyPairFile != "/path/to/active.json" {
 		t.Errorf("Expected ActiveKeyPairFile to be /path/to/active.json, got %s", validator.Identities.ActiveKeyPairFile)
