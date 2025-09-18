@@ -40,20 +40,20 @@ build-all:
 		echo "Building for $$OS/$$ARCH..."; \
 		CGO_ENABLED=0 GOOS=$$OS GOARCH=$$ARCH go build -mod=mod $(LDFLAGS) -o $(BUILD_DIR)/$$OUTPUT_NAME ./cmd/solana-validator-version-sync; \
 	done
-	@echo "Generating checksums..."
-	@cd $(BUILD_DIR) && \
-	for binary in $(BINARY_NAME)-*; do \
-		if [ -f "$$binary" ] && [[ ! "$$binary" == *.sha256 ]]; then \
-			echo "Generating checksum for $$binary..."; \
-			sha256sum "$$binary" > "$$binary.sha256"; \
-		fi; \
-	done
 	@echo "Compressing binaries..."
 	@cd $(BUILD_DIR) && \
 	for binary in $(BINARY_NAME)-*; do \
 		if [ -f "$$binary" ] && [[ ! "$$binary" == *.sha256 ]]; then \
 			echo "Compressing $$binary..."; \
 			gzip "$$binary"; \
+		fi; \
+	done
+	@echo "Generating checksums..."
+	@cd $(BUILD_DIR) && \
+	for binary in $(BINARY_NAME)-*.gz; do \
+		if [ -f "$$binary" ]; then \
+			echo "Generating checksum for $$binary..."; \
+			sha256sum "$$binary" > "$$binary.sha256"; \
 		fi; \
 	done
 	@echo "Build complete. Compressed binaries and checksums are in $(BUILD_DIR)/"
