@@ -4,6 +4,7 @@
 BINARY_NAME := solana-validator-version-sync
 BUILD_DIR := bin
 LDFLAGS := -ldflags="-s -w"
+export COMPOSE_BAKE := true
 
 # Build targets
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
@@ -88,7 +89,7 @@ dev:
 .PHONY: dev-docker
 dev-docker:
 	@echo "Starting development environment with Docker Compose..."
-	@docker compose -f docker-compose.dev.yml up --build
+	@docker compose -f docker-compose.dev.yml up --build solana-validator-version-sync mock-validator
 
 # Stop Docker development
 .PHONY: dev-docker-stop

@@ -81,6 +81,14 @@ func New(opts Options) (v *Validator, err error) {
 
 // SyncVersion syncs the validator's version
 func (v *Validator) SyncVersion() (err error) {
+	// warn if active and passive identites are the same
+	if v.ActiveIdentityPublicKey == v.PassiveIdentityPublicKey {
+		v.logger.Warn("configured active and passive identites are the same",
+			"activePubkey", v.ActiveIdentityPublicKey,
+			"passivePubkey", v.PassiveIdentityPublicKey,
+		)
+	}
+
 	// refresh the validator's state
 	err = v.refreshState()
 	if err != nil {
@@ -97,10 +105,10 @@ func (v *Validator) SyncVersion() (err error) {
 	switch v.Role() {
 	case RoleActive:
 		if !v.syncConfig.EnabledWhenActive {
-			syncLogger.Warnf("validator is %s - let us *not* run with scissors ✂️🏃‍♂️ and skip sync", v.Role())
+			syncLogger.Warnf("validator is %s and we don't run with scissors ❌🏃✂️  - skipping sync (allow with sync.enabled_when_active=true)", v.Role())
 			return nil
 		}
-		syncLogger.Warnf("validator is %s and enabled when active=%t - syncing", v.Role(), v.syncConfig.EnabledWhenActive)
+		syncLogger.Warnf("validator is %s and sync.enabled_when_active=%t running with scissors ⚠️🏃‍♂️✂️  - syncing", v.Role(), v.syncConfig.EnabledWhenActive)
 	case RolePassive:
 		syncLogger.Info("validator is passive - syncing")
 	default:
@@ -187,7 +195,11 @@ func (v *Validator) SyncVersion() (err error) {
 	}
 
 	// by now we know we need to sync and are allowed to sync to the target version
-	syncLogger.Infof("syncing to target version (%s)", versionDiff.Direction())
+	syncLogger = syncLogger.With("syncDirection", versionDiff.Direction())
+	syncLogger.Infof("%v  %s required v%s -> v%s",
+		versionDiff.DirectionEmoji(), versionDiff.Direction(),
+		versionDiff.From.Core().String(), versionDiff.To.Core().String(),
+	)
 
 	// create the commands
 	syncLogger.Infof("executing %d commands", len(v.syncConfig.Commands))
@@ -257,8 +269,8 @@ func (v *Validator) refreshState() error {
 	if v.IsRoleUnknown() {
 		v.logger.Warn("validator is running with an identity that does not match active or passive identities",
 			"identityPubkey", v.State.IdentityPublicKey,
-			"activeIdentityPublicKey", v.ActiveIdentityPublicKey,
-			"passiveIdentityPublicKey", v.PassiveIdentityPublicKey,
+			"activePubkey", v.ActiveIdentityPublicKey,
+			"passivePubkey", v.PassiveIdentityPublicKey,
 		)
 	}
 
@@ -289,6 +301,8 @@ func (v *Validator) IsActive() bool {
 }
 
 // IsPassive checks if the validator is the passive identity
+// cover cases like testnet where a validator could be given the same active and passive identity
+// in that case, we assume active
 func (v *Validator) IsPassive() bool {
-	return v.State.IdentityPublicKey == v.PassiveIdentityPublicKey
+	return v.State.IdentityPublicKey == v.PassiveIdentityPublicKey && !v.IsActive()
 }
