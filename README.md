@@ -68,17 +68,9 @@ sync:
   # Use with care, usually only for testnet.
   enabled_when_active: false # default: false
 
-  # Allowed semver changes for the given client, major, minor, patch, if the target version doesn't satisfy these allowed changes
-  # no sync commands are issued
-  allowed_semver_changes:
-    major: false # default: false - sync when major version changes
-    minor: true  # default: true  - sync when minor version changes
-    patch: true  # default: true  - sync when patch version changes
-
   # Ensure the target version satisfies SFDP requirements as reported by the API:
   # https://api.solana.org/api/epoch/required_versions
   enable_sfdp_compliance: true # default: false
-
 
   # Commands to run when there is a version change. They will run in the order they are declared.  
   # cmd, args, and environment values can be template strings and will be interpolated with the following variables:
