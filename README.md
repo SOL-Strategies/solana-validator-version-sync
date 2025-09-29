@@ -3,7 +3,7 @@
 
 A simple version synchronization manager for Solana validators, including [SFDP](https://solana.org/delegation-program) compliance.
 
-![solanna-validator-version-sync](freeze.png)
+![solanna-validator-version-sync](vhs/demo.gif)
 
 
 ## Features

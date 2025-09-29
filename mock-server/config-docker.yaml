@@ -5,7 +5,7 @@ server:
 validator:
   # Path to the keypair file (Docker volume mount)
   identity_keypair: "/app/local-test/passive-identity.json"
-  running_version: "2.3.6"
+  running_version: "3.0.0"
 
 # Health endpoint configuration
 health:
