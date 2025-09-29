@@ -12,7 +12,7 @@ A simple version synchronization manager for Solana validators, including [SFDP]
 - 👮 **SFDP Compliance**: Checks version requirements against SFDP (Solana Foundation Delegation Program) bounds.
 - ♻️ **Sync Commands**: Executes configurable commands when a version sync for the given validator client is required.
 - ⌚ **Single-shot or recurring**: Run once or on a specified interval
-- ✅ **Multiple Clients**: Supports [agave](https://github.com/anza-xyz/agave), [jito-solana](https://github.com/jito-foundation/jito-solana/), and [firedancer](https://github.com/firedancer-io/firedancer) validator client release monitoring.
+- ✅ **Multiple Clients**: Supports [agave](https://github.com/anza-xyz/agave), [jito-solana](https://github.com/jito-foundation/jito-solana/), [bam-client](https://github.com/jito-labs/bam-client) and [firedancer](https://github.com/firedancer-io/firedancer) validator client release monitoring.
 
 ## Installation
 
