@@ -24,6 +24,13 @@ var clientRepoConfigs = map[string]ClientRepoConfig{
 			constants.ClusterNameTestnet:     "^Testnet - v([0-9]+\\.[0-9]+\\.[0-9]+)-jito$",
 		},
 	},
+	constants.ClientNameBAM: {
+		URL: "https://github.com/jito-labs/bam-client",
+		ReleaseTitleRegexes: map[string]string{
+			constants.ClusterNameMainnetBeta: "^Mainnet - v([0-9]+\\.[0-9]+\\.[0-9]+)-bam$",
+			constants.ClusterNameTestnet:     "^Testnet - v([0-9]+\\.[0-9]+\\.[0-9]+)-bam$",
+		},
+	},
 	constants.ClientNameFiredancer: {
 		URL: "https://github.com/firedancer-io/firedancer",
 		ReleaseTitleRegexes: map[string]string{
