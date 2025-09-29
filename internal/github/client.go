@@ -99,7 +99,7 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 	case constants.ClientNameAgave:
 		// agave flag release cluster in release notes
 		versionStrings = versionsFromReleaseBodyRegex(releases, c.releaseNotesRegex)
-	case constants.ClientNameJitoSolana, constants.ClientNameFiredancer:
+	case constants.ClientNameJitoSolana, constants.ClientNameFiredancer, constants.ClientNameBAM:
 		// jito-solana and firedancer flags release cluster in release title prefix
 		versionStrings = versionsFromReleaseTitleRegex(releases, c.releaseTitleRegex)
 	}
