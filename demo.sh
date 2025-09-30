@@ -24,13 +24,13 @@ case $1 in
     ;;
   monitor)
     shift 1
-    echo "wating for healthy validator at $*/health..."
+    echo "waiting for healthy validator at $*/health..."
     sleep 5
     echo done
     ;;
   notify)
     shift 1
-    echo "sending slack notification version change $*..."
+    echo "sending slack notification for version change $*..."
     sleep 1
     echo done
     ;;
