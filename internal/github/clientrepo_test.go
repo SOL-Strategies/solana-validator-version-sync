@@ -151,13 +151,13 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			clientName: constants.ClientNameJitoSolana,
 			cluster:    constants.ClusterNameMainnetBeta,
 			regexType:  "ReleaseTitleRegex",
-			regex:      "^Mainnet - v([0-9]+\\.[0-9]+\\.[0-9]+)-jito$",
+			regex:      "^Mainnet - v([0-9]+\\.[0-9]+\\.[0-9]+)-jito(?:\\.([0-9]+))?$",
 		},
 		{
 			clientName: constants.ClientNameJitoSolana,
 			cluster:    constants.ClusterNameTestnet,
 			regexType:  "ReleaseTitleRegex",
-			regex:      "^Testnet - v([0-9]+\\.[0-9]+\\.[0-9]+)-jito$",
+			regex:      "^Testnet - v([0-9]+\\.[0-9]+\\.[0-9]+)-jito(?:\\.([0-9]+))?$",
 		},
 		{
 			clientName: constants.ClientNameFiredancer,
