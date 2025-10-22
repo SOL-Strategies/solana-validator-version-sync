@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"text/template"
 
 	"github.com/charmbracelet/lipgloss"
@@ -39,6 +40,7 @@ type Command struct {
 	Environment  map[string]string `koanf:"environment"`
 	StreamOutput bool              `koanf:"stream_output"`
 
+	logPrefix            string
 	logger               *log.Logger
 	cmdTemplate          *template.Template
 	argsTemplates        []*template.Template
@@ -109,6 +111,10 @@ func (c *Command) Parse() (err error) {
 	return nil
 }
 
+func (c *Command) setLogPrefix(prefix string) {
+	c.logPrefix = prefix
+}
+
 // ExecuteWithData executes the command with the provided template data
 func (c *Command) ExecuteWithData(data CommandTemplateData) (err error) {
 	var (
@@ -117,11 +123,9 @@ func (c *Command) ExecuteWithData(data CommandTemplateData) (err error) {
 		compiledEnvironment map[string]string
 	)
 
-	execLogger := log.WithPrefix(
-		fmt.Sprintf("sync:commands[%d/%d %s]", data.CommandIndex+1, data.CommandsCount, c.Name),
-	)
+	c.setLogPrefix(fmt.Sprintf("sync:commands[%d/%d %s]", data.CommandIndex+1, data.CommandsCount, c.Name))
 
-	execLogger.Debugf("executing command with data %+v", data)
+	execLogger := log.WithPrefix(c.logPrefix)
 
 	// compiled command
 	cmdBuf := bytes.Buffer{}
@@ -161,7 +165,7 @@ func (c *Command) ExecuteWithData(data CommandTemplateData) (err error) {
 	})
 }
 
-func (c *Command) exec(opts ExecOptions) (err error) {
+func (c *Command) exec(opts ExecOptions) error {
 	// doing something wrong here, but can't see it so make sure args exclude blank args
 	sanitizedArgs := []string{}
 	opts.ExecLogger.Debug("sanitizing args", "args", opts.Args)
@@ -180,6 +184,7 @@ func (c *Command) exec(opts ExecOptions) (err error) {
 	).Info("running")
 
 	// run it
+	var cmdErr error
 	cmd := exec.Command(opts.Cmd, sanitizedArgs...)
 	cmd.Env = opts.EnvironmentSlice()
 
@@ -198,56 +203,81 @@ func (c *Command) exec(opts ExecOptions) (err error) {
 		err = cmd.Start()
 
 		if err != nil && c.AllowFailure {
-			opts.ExecLogger.Error("failed to start command with allow failure enabled - continuing", "error", err)
+			opts.ExecLogger.Warn("failed to start command with allow failure enabled - continuing", "error", err)
 			return nil
 		}
 
 		if err != nil {
-			return fmt.Errorf("failed to start command: %w", err)
+			return fmt.Errorf("failed %s: %w", c.logPrefix, err)
 		}
 
 		// get the command pid (only after successful start)
 		pid := cmd.Process.Pid
 		opts.ExecLogger.Debug("command pid", "pid", pid)
 
+		// Use WaitGroup to ensure goroutines complete before function returns
+		var wg sync.WaitGroup
+		wg.Add(2)
+
 		// Stream stdout
 		go func() {
+			defer wg.Done()
+			defer stdout.Close()
 			scanner := bufio.NewScanner(stdout)
 			for scanner.Scan() {
 				opts.ExecLogger.Info(
 					styledStreamOutputString("stdout", scanner.Text()),
 				)
 			}
+			if err := scanner.Err(); err != nil {
+				opts.ExecLogger.Error("error reading stdout", "error", err)
+			}
 		}()
 
 		// Stream stderr
 		go func() {
+			defer wg.Done()
+			defer stderr.Close()
 			scanner := bufio.NewScanner(stderr)
 			for scanner.Scan() {
 				opts.ExecLogger.Info(
 					styledStreamOutputString("stderr", scanner.Text()),
 				)
 			}
+			if err := scanner.Err(); err != nil {
+				opts.ExecLogger.Error("error reading stderr", "error", err)
+			}
 		}()
 
 		// Wait for command to complete
-		err = cmd.Wait()
-	} else {
-		err = cmd.Run()
-		// if failed and not allowed to fail, return error
-		if err != nil && !opts.AllowFailure {
-			opts.ExecLogger.Error("failed")
-			return err
-		}
+		cmdErr = cmd.Wait()
 
-		// if failed and allowed to fail say so and continue
-		if err != nil && opts.AllowFailure {
-			opts.ExecLogger.Warn(fmt.Sprintf("failed with sync.commands[%d].allow_failure=true - continuing", opts.CommandIndex), "error", err)
-			return nil
+		// Wait for streaming goroutines to complete
+		wg.Wait()
+	} else {
+		var combinedOutput []byte
+		combinedOutput, cmdErr = cmd.CombinedOutput()
+		outputMessage := "command output:\n" + string(combinedOutput)
+		if cmdErr != nil {
+			opts.ExecLogger.Error(outputMessage)
+		} else {
+			opts.ExecLogger.Info(outputMessage)
 		}
 	}
 
-	return nil
+	// if failed and allowed to fail, collect stderr output into a string and return as error
+	if cmdErr != nil && opts.AllowFailure {
+		opts.ExecLogger.Warn("command failed with allow failure enabled - continuing", "error", cmdErr)
+		return nil
+	}
+
+	// if failed, return error
+	if cmdErr != nil {
+		opts.ExecLogger.Error("command failed", "error", cmdErr)
+		cmdErr = fmt.Errorf("failed %s: %w", c.logPrefix, cmdErr)
+	}
+
+	return cmdErr
 }
 
 // EnvironmentSlice returns the environment variables as a slice of strings
