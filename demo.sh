@@ -14,7 +14,8 @@ case $1 in
     shift 1
     echo "installing $*"
     sleep 1
-    echo "done"
+    echo "oops! we failed miserably!" >&2
+    exit 1
     ;;
   restart)
     shift 1
