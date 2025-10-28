@@ -26,15 +26,17 @@ var (
 
 // Client represents a GitHub API client
 type Client struct {
-	releaseNotesRegex *regexp.Regexp
-	releaseTitleRegex *regexp.Regexp
-	repoURL           string
-	repoOwner         string
-	repoName          string
-	clientName        string
-	client            *github.Client
-	cluster           string
-	logger            *log.Logger
+	// map of cluster to release notes regex
+	releaseNotesRegexes map[string]*regexp.Regexp
+	// map of cluster to release title regex
+	releaseTitleRegexes map[string]*regexp.Regexp
+	repoURL             string
+	repoOwner           string
+	repoName            string
+	clientName          string
+	client              *github.Client
+	cluster             string
+	logger              *log.Logger
 }
 
 // Options represents the options for creating a new GitHub client
@@ -65,18 +67,23 @@ func NewClient(opts Options) (c *Client, err error) {
 		return nil, fmt.Errorf("failed to extract owner/repo from URL: %w", err)
 	}
 
-	// compile release notes regex
-	c.releaseNotesRegex, err = regexp.Compile(repoConfig.ReleaseNotesRegexes[c.cluster])
-	if err != nil {
-		return nil, fmt.Errorf("failed to compile release notes regex: %w", err)
-	}
+	// initialize release notes and title regexes
+	c.releaseNotesRegexes = make(map[string]*regexp.Regexp)
+	c.releaseTitleRegexes = make(map[string]*regexp.Regexp)
 
-	// compile release title regex
-	c.releaseTitleRegex, err = regexp.Compile(repoConfig.ReleaseTitleRegexes[c.cluster])
-	if err != nil {
-		return nil, fmt.Errorf("failed to compile release title regex: %w", err)
+	// compile release notes and title regexes for each cluster
+	for _, cluster := range constants.ValidClusterNames {
+		// compile release notes regexes
+		c.releaseNotesRegexes[cluster], err = regexp.Compile(repoConfig.ReleaseNotesRegexes[cluster])
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile release notes regex: %w", err)
+		}
+		// compile release title regexes
+		c.releaseTitleRegexes[cluster], err = regexp.Compile(repoConfig.ReleaseTitleRegexes[cluster])
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile release title regex: %w", err)
+		}
 	}
-
 	return c, nil
 }
 
@@ -93,30 +100,46 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 		return nil, fmt.Errorf("failed to get releases: %w", err)
 	}
 
-	versionStrings := []string{}
+	// map of cluster to version strings
+	versionStrings := make(map[string][]string)
 
 	switch c.clientName {
 	case constants.ClientNameAgave:
 		// agave flag release cluster in release notes
-		versionStrings = versionsFromReleaseBodyRegex(releases, c.releaseNotesRegex)
+		for _, cluster := range constants.ValidClusterNames {
+			versionStrings[cluster] = versionsFromReleaseBodyRegex(releases, c.releaseNotesRegexes[cluster])
+		}
 	case constants.ClientNameJitoSolana, constants.ClientNameFiredancer, constants.ClientNameBAM:
 		// jito-solana and firedancer flags release cluster in release title prefix
-		versionStrings = versionsFromReleaseTitleRegex(releases, c.releaseTitleRegex)
+		for _, cluster := range constants.ValidClusterNames {
+			versionStrings[cluster] = versionsFromReleaseTitleRegex(releases, c.releaseTitleRegexes[cluster])
+		}
 	}
 
-	if len(versionStrings) == 0 {
-		return nil, fmt.Errorf("no releases found matching regex: %s", c.releaseNotesRegex.String())
+	// fail if no releases found for client configured cluster
+	for cluster, versionStrings := range versionStrings {
+		if len(versionStrings) == 0 {
+			return nil, fmt.Errorf("no %s releases found matching regex: %s", cluster, c.releaseNotesRegexes[cluster].String())
+		}
 	}
 
-	// Create versions slice and sort
-	versions := make([]*version.Version, len(versionStrings))
-	for i, raw := range versionStrings {
-		v, _ := version.NewVersion(raw)
-		versions[i] = v
+	// For each cluster, create a versions slice and sort, and get the latest version
+	latestClusterVersion := make(map[string]*version.Version)
+	for cluster, versionStrings := range versionStrings {
+		sortedVersions := c.sortedVersionsFromVersionStrings(versionStrings)
+		latestClusterVersion[cluster] = sortedVersions[len(sortedVersions)-1]
+		c.logger.Debug("latest version "+latestClusterVersion[cluster].Core().String(), "client", c.clientName, "cluster", cluster, "repoURL", c.repoURL+"/releases")
 	}
-	sort.Sort(version.Collection(versions))
 
-	latestVersion = versions[len(versions)-1]
+	// If cluster is testnet and mainnet version is higher, use mainnet version and warn
+	latestVersion = latestClusterVersion[c.cluster]
+	if c.cluster == constants.ClusterNameTestnet && latestClusterVersion[constants.ClusterNameMainnetBeta].GreaterThan(latestVersion) {
+		latestVersion = latestClusterVersion[constants.ClusterNameMainnetBeta]
+		c.logger.Warn(fmt.Sprintf("mainnet v%s > v%s testnet - preferring mainnet version",
+			latestClusterVersion[constants.ClusterNameMainnetBeta].Core().String(),
+			latestClusterVersion[c.cluster].Core().String()),
+			"client", c.clientName, "cluster", c.cluster, "repoURL", c.repoURL+"/releases")
+	}
 
 	c.logger.Info("latest version "+latestVersion.Core().String(), "client", c.clientName, "cluster", c.cluster, "repoURL", c.repoURL+"/releases")
 
@@ -155,4 +178,16 @@ func (c *Client) setOwnerAndRepo() (err error) {
 	c.repoName = matches[2]
 
 	return nil
+}
+
+func (c *Client) sortedVersionsFromVersionStrings(versionStrings []string) (sortedVersions []*version.Version) {
+	c.logger.Debug("sorting versions", "versionStrings", versionStrings)
+	sortedVersions = make([]*version.Version, len(versionStrings))
+	for i, raw := range versionStrings {
+		v, _ := version.NewVersion(raw)
+		sortedVersions[i] = v
+	}
+	sort.Sort(version.Collection(sortedVersions))
+	c.logger.Debug("sorted versions", "sortedVersions", sortedVersions)
+	return sortedVersions
 }
