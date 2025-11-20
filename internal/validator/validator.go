@@ -116,7 +116,6 @@ func (v *Validator) SyncVersion() (err error) {
 
 	syncLogger := log.WithPrefix("sync").With(
 		"client", v.cfg.Client,
-		"version", v.State.Version.String(),
 		"role", v.Role(),
 		"pubKey", v.State.IdentityPublicKey,
 	)
@@ -151,34 +150,24 @@ func (v *Validator) SyncVersion() (err error) {
 
 	// If enabled, ensure target version is within SFDP constraints or update to max/min allowed SFDP version
 	if v.syncConfig.EnableSFDPCompliance {
-		sfdpRequirements, err := v.sfdpClient.GetLatestRequirements()
+		syncLogger.Info("ensuring target version is within SFDP constraints")
+
+		sfdpCompliantVersion, err := v.getSFDPCompliantVersion(versionDiff.To)
 		if err != nil {
 			return err
 		}
 
-		syncLogger.Debug("got latest requirements from SFDP", "sfdpRequirements", sfdpRequirements.Constraints.String())
-
-		// if target version is not within sfdp constraints, update it to get the max version sfdp allows
-		if sfdpRequirements.Constraints.Check(versionDiff.To.Core()) {
-			syncLogger.Debug("target version is within SFDP constraints",
-				"targetVersion", versionDiff.To.Core().String(),
-				"sfdpRequirement", sfdpRequirements.Constraints.String(),
-			)
-		} else if sfdpRequirements.HasMaxVersion {
-			syncLogger.Warn("target version is not within SFDP constraints - updating to max allowed SFDP version",
-				"targetVersion", versionDiff.To.Core().String(),
-				"sfdpMaxVersion", sfdpRequirements.MaxVersion.String(),
-				"sfdpRequirement", sfdpRequirements.Constraints.String(),
-			)
-			versionDiff.To = sfdpRequirements.MaxVersion
-		} else if sfdpRequirements.HasMinVersion {
-			syncLogger.Warn("target version is not within SFDP constraints - updating to min allowed SFDP version",
-				"targetVersion", versionDiff.To.Core().String(),
-				"sfdpMinVersion", sfdpRequirements.MinVersion.String(),
-				"sfdpRequirement", sfdpRequirements.Constraints.String(),
-			)
-			versionDiff.To = sfdpRequirements.MinVersion
+		syncLogger.Info("confirming SFDP compliant version exists in repo", "sfdp_compliant_version", sfdpCompliantVersion.Core().String())
+		repoHasSFDPCompliantVersion, err := v.githubClient.HasTaggedVersion(sfdpCompliantVersion)
+		if err != nil {
+			return err
 		}
+		if !repoHasSFDPCompliantVersion {
+			return fmt.Errorf("SFDP wants v%s and it does not exist as a tagged version in the client repo %s", sfdpCompliantVersion.Core().String(), v.githubClient.GetRepoURL())
+		}
+
+		syncLogger.Info("setting target version to SFDP compliant version", "sfdp_compliant_version", sfdpCompliantVersion.Core().String())
+		versionDiff.To = sfdpCompliantVersion
 	}
 
 	syncLogger.Debugf("final target sync version: %s", versionDiff.To.Core().String())
@@ -235,6 +224,46 @@ func (v *Validator) SyncVersion() (err error) {
 
 	syncLogger.Infof("commands executed successfully")
 	return nil
+}
+
+func (v *Validator) getSFDPCompliantVersion(targetVersion *version.Version) (sfdpCompliantVersion *version.Version, err error) {
+	sfdpRequirements, err := v.sfdpClient.GetLatestRequirements()
+	if err != nil {
+		return nil, err
+	}
+
+	v.logger.Debug("got latest requirements from SFDP", "sfdpRequirements", sfdpRequirements.Constraints.String())
+
+	// target version is within SFDP constraints
+	if sfdpRequirements.Constraints.Check(targetVersion.Core()) {
+		v.logger.Info("target version is within SFDP constraints",
+			"targetVersion", targetVersion.Core().String(),
+			"sfdpRequirement", sfdpRequirements.Constraints.String(),
+		)
+		sfdpCompliantVersion = targetVersion
+	}
+
+	// SFDP has max version and target repo, if targetVersion is above it, return the max allowed by SFDP
+	if sfdpRequirements.HasMaxVersion && targetVersion.Core().Compare(sfdpRequirements.MaxVersion.Core()) > 0 {
+		v.logger.Warn("target version is greater than max allowed SFDP version - updating to max allowed SFDP version",
+			"targetVersion", targetVersion.Core().String(),
+			"sfdpMaxVersion", sfdpRequirements.MaxVersion.String(),
+			"sfdpRequirement", sfdpRequirements.Constraints.String(),
+		)
+		sfdpCompliantVersion = sfdpRequirements.MaxVersion
+	}
+
+	// SFDP has min version and target repo, if targetVersion is below it, return the min allowed by SFDP
+	if sfdpRequirements.HasMinVersion && targetVersion.Core().Compare(sfdpRequirements.MinVersion.Core()) < 0 {
+		v.logger.Warn("target version is not within SFDP constraints - updating to min allowed SFDP version",
+			"targetVersion", targetVersion.Core().String(),
+			"sfdpMinVersion", sfdpRequirements.MinVersion.String(),
+			"sfdpRequirement", sfdpRequirements.Constraints.String(),
+		)
+		sfdpCompliantVersion = sfdpRequirements.MinVersion
+	}
+
+	return sfdpCompliantVersion, nil
 }
 
 // refreshState refreshes the validator's state
