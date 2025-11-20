@@ -5,7 +5,7 @@ server:
 validator:
   # Path to the keypair file (relative to this config file or absolute path)
   identity_keypair: "../local-test/passive-identity.json"
-  running_version: "2.3.0"
+  running_version: "3.0.10"
 
 # Health endpoint configuration
 health:

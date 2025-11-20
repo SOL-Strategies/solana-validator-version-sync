@@ -146,6 +146,41 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 	return latestVersion, nil
 }
 
+// HasTaggedVersion checks if a tagged version exists in the client repo
+func (c *Client) HasTaggedVersion(testVersion *version.Version) (hasTaggedVersion bool, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// get tags from the client repo and return true if a tag with the version exists
+	tags, _, err := c.client.Repositories.ListTags(ctx, c.repoOwner, c.repoName, &github.ListOptions{
+		PerPage: 20,
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to get tags: %w", err)
+	}
+
+	// check over the returned tags
+	for _, tag := range tags {
+		// parse the tag version into a version.Version so we can compare the core versions
+		c.logger.Debug("parsing github tag version", "tag", tag.GetName())
+		tagVersion, err := version.NewVersion(tag.GetName())
+		if err != nil {
+			return false, fmt.Errorf("failed to parse tag version: %w", err)
+		}
+
+		c.logger.Debug("comparing tag version to test version", "tagVersion", tagVersion.Core().String(), "testVersion", testVersion.Core().String())
+		// testVersion exists so return true
+		if tagVersion.Core().Compare(testVersion.Core()) == 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (c *Client) GetRepoURL() string {
+	return c.repoURL
+}
+
 // versionsFromReleaseTitleRegex gets versions from releases with titles matching the supplied regex
 func versionsFromReleaseTitleRegex(releases []*github.RepositoryRelease, regex *regexp.Regexp) (versionStrings []string) {
 	for _, release := range releases {
