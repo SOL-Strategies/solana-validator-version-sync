@@ -49,18 +49,60 @@ func (m *Manager) RunOnce() error {
 func (m *Manager) RunOnInterval(intervalDuration time.Duration) (err error) {
 	m.logger.Info("🚀 starting solana-validator-version-sync (continuous mode)", "interval", intervalDuration.String())
 
-	// Run sync on a loop with sleep between syncs
+	// Calculate the next boundary time based on the interval
+	now := time.Now().UTC()
+	nextSyncTime := m.calculateNextBoundary(now, intervalDuration)
+
+	// Wait until the first boundary before starting
+	if nextSyncTime.After(now) {
+		waitDuration := nextSyncTime.Sub(now)
+		m.logger.Info("waiting until next interval boundary", "wait", waitDuration.String(), "next_sync", nextSyncTime.Format("2006-01-02T15:04:05Z"))
+		time.Sleep(waitDuration)
+	}
+
+	// Run sync on a loop, aligning to interval boundaries
 	for {
 		m.runSyncVersionInterval(intervalDuration)
-		time.Sleep(intervalDuration)
+
+		// Calculate next boundary time
+		now = time.Now().UTC()
+		nextSyncTime = m.calculateNextBoundary(now, intervalDuration)
+		waitDuration := nextSyncTime.Sub(now)
+
+		if waitDuration > 0 {
+			time.Sleep(waitDuration)
+		}
 	}
+}
+
+// calculateNextBoundary calculates the next time boundary based on the interval duration
+// For example, if interval is 10m and current time is 9:53, it returns 10:00
+// Boundaries align with clock times (e.g., for 5m: :00, :05, :10, :15, etc.)
+func (m *Manager) calculateNextBoundary(now time.Time, intervalDuration time.Duration) time.Time {
+	// Truncate to the start of the day (midnight)
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// Calculate duration since midnight
+	durationSinceMidnight := now.Sub(startOfDay)
+
+	// Truncate to the previous interval boundary
+	truncatedDuration := durationSinceMidnight.Truncate(intervalDuration)
+
+	// Add one interval to get the next boundary
+	nextBoundaryDuration := truncatedDuration + intervalDuration
+
+	// Calculate the next boundary time
+	nextBoundary := startOfDay.Add(nextBoundaryDuration)
+
+	return nextBoundary
 }
 
 // runSyncVersionInterval runs the sync version and logs the result without returning an error - used with on interval mode
 func (m *Manager) runSyncVersionInterval(intervalDuration time.Duration) {
 	m.logger.Info("running sync")
 	err := m.validator.SyncVersion()
-	nextSyncTime := time.Now().UTC().Add(intervalDuration)
+	now := time.Now().UTC()
+	nextSyncTime := m.calculateNextBoundary(now, intervalDuration)
 
 	// Set result string
 	resultString := "succeeded"
@@ -68,8 +110,9 @@ func (m *Manager) runSyncVersionInterval(intervalDuration time.Duration) {
 		resultString = "failed"
 	}
 
+	waitDuration := nextSyncTime.Sub(now)
 	msg := fmt.Sprintf("sync %s - next sync in %s at %s",
-		resultString, intervalDuration.String(), nextSyncTime.Format("2006-01-02T15:04:05Z"),
+		resultString, waitDuration.String(), nextSyncTime.Format("2006-01-02T15:04:05Z"),
 	)
 
 	if err != nil {
