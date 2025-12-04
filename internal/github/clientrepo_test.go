@@ -1,6 +1,7 @@
 package github
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -35,6 +36,7 @@ func TestClientRepoConfigs_AllClients(t *testing.T) {
 	expectedClients := []string{
 		constants.ClientNameAgave,
 		constants.ClientNameJitoSolana,
+		constants.ClientNameBAM,
 		constants.ClientNameFiredancer,
 	}
 
@@ -105,6 +107,29 @@ func TestClientRepoConfigs_JitoSolanaConfig(t *testing.T) {
 	}
 }
 
+func TestClientRepoConfigs_BAMConfig(t *testing.T) {
+	config := clientRepoConfigs[constants.ClientNameBAM]
+
+	// Verify URL
+	expectedURL := "https://github.com/jito-labs/bam-client"
+	if config.URL != expectedURL {
+		t.Errorf("BAM URL = %v, want %v", config.URL, expectedURL)
+	}
+
+	// Verify ReleaseTitleRegexes exist for both clusters
+	expectedClusters := []string{constants.ClusterNameMainnetBeta, constants.ClusterNameTestnet}
+	for _, cluster := range expectedClusters {
+		if _, exists := config.ReleaseTitleRegexes[cluster]; !exists {
+			t.Errorf("BAM ReleaseTitleRegex not found for cluster: %s", cluster)
+		}
+	}
+
+	// BAM should not have ReleaseNotesRegexes
+	if config.ReleaseNotesRegexes != nil {
+		t.Errorf("BAM should not have ReleaseNotesRegexes, but found: %v", config.ReleaseNotesRegexes)
+	}
+}
+
 func TestClientRepoConfigs_FiredancerConfig(t *testing.T) {
 	config := clientRepoConfigs[constants.ClientNameFiredancer]
 
@@ -160,6 +185,18 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			regex:      "^Testnet - v([0-9]+\\.[0-9]+\\.[0-9]+)-jito(?:\\.([0-9]+))?$",
 		},
 		{
+			clientName: constants.ClientNameBAM,
+			cluster:    constants.ClusterNameMainnetBeta,
+			regexType:  "ReleaseTitleRegex",
+			regex:      "^Mainnet - (?:Release )?v([0-9]+\\.[0-9]+\\.[0-9]+)-bam$",
+		},
+		{
+			clientName: constants.ClientNameBAM,
+			cluster:    constants.ClusterNameTestnet,
+			regexType:  "ReleaseTitleRegex",
+			regex:      "^Testnet - (?:Release )?v([0-9]+\\.[0-9]+\\.[0-9]+)-bam$",
+		},
+		{
 			clientName: constants.ClientNameFiredancer,
 			cluster:    constants.ClusterNameMainnetBeta,
 			regexType:  "ReleaseTitleRegex",
@@ -193,6 +230,91 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 
 			if actualRegex != tt.regex {
 				t.Errorf("%s = %v, want %v", tt.regexType, actualRegex, tt.regex)
+			}
+		})
+	}
+}
+
+func TestClientRepoConfigs_BAMReleaseTitleRegex(t *testing.T) {
+	config := clientRepoConfigs[constants.ClientNameBAM]
+
+	tests := []struct {
+		name            string
+		cluster         string
+		releaseTitle    string
+		shouldMatch     bool
+		expectedVersion string
+	}{
+		{
+			name:            "Mainnet with Release prefix",
+			cluster:         constants.ClusterNameMainnetBeta,
+			releaseTitle:    "Mainnet - Release v3.0.12-bam",
+			shouldMatch:     true,
+			expectedVersion: "3.0.12",
+		},
+		{
+			name:            "Mainnet without Release prefix",
+			cluster:         constants.ClusterNameMainnetBeta,
+			releaseTitle:    "Mainnet - v3.0.11-bam",
+			shouldMatch:     true,
+			expectedVersion: "3.0.11",
+		},
+		{
+			name:            "Testnet with Release prefix",
+			cluster:         constants.ClusterNameTestnet,
+			releaseTitle:    "Testnet - Release v3.0.12-bam",
+			shouldMatch:     true,
+			expectedVersion: "3.0.12",
+		},
+		{
+			name:            "Testnet without Release prefix",
+			cluster:         constants.ClusterNameTestnet,
+			releaseTitle:    "Testnet - v3.0.11-bam",
+			shouldMatch:     true,
+			expectedVersion: "3.0.11",
+		},
+		{
+			name:            "Mainnet invalid format",
+			cluster:         constants.ClusterNameMainnetBeta,
+			releaseTitle:    "Mainnet - v3.0.11",
+			shouldMatch:     false,
+			expectedVersion: "",
+		},
+		{
+			name:            "Testnet invalid format",
+			cluster:         constants.ClusterNameTestnet,
+			releaseTitle:    "Testnet - v3.0.11",
+			shouldMatch:     false,
+			expectedVersion: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			regexStr, exists := config.ReleaseTitleRegexes[tt.cluster]
+			if !exists {
+				t.Fatalf("ReleaseTitleRegex not found for cluster: %s", tt.cluster)
+			}
+
+			re := regexp.MustCompile(regexStr)
+			matches := re.FindStringSubmatch(tt.releaseTitle)
+
+			if tt.shouldMatch {
+				if matches == nil {
+					t.Errorf("Expected regex to match %q, but it didn't", tt.releaseTitle)
+					return
+				}
+				if len(matches) < 2 {
+					t.Errorf("Expected at least 1 capture group, got %d", len(matches)-1)
+					return
+				}
+				if matches[1] != tt.expectedVersion {
+					t.Errorf("Expected version %q, got %q", tt.expectedVersion, matches[1])
+				}
+			} else {
+				if matches != nil {
+					t.Errorf("Expected regex to NOT match %q, but it did (matched: %v)", tt.releaseTitle, matches)
+				}
 			}
 		})
 	}
