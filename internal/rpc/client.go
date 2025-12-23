@@ -40,6 +40,14 @@ type Client struct {
 	logger *log.Logger
 }
 
+// clusterNode represents a node in the cluster
+type clusterNodeResult struct {
+	Gossip string `json:"gossip"`
+	Pubkey string `json:"pubkey"`
+}
+
+type clusterNodeResults []clusterNodeResult
+
 // NewClient creates a new RPC client
 func NewClient(url string) *Client {
 	return &Client{
@@ -164,6 +172,38 @@ func (c *Client) getHealth(ctx context.Context) (string, error) {
 	return result, nil
 }
 
+// getClusterNodes gets all delinquent and non-delinquent validators from gossip
+func (c *Client) getClusterNodes(ctx context.Context) (*clusterNodeResults, error) {
+	resp, err := c.makeRPCCall(ctx, "getClusterNodes", []interface{}{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cluster nodes: %w", err)
+	}
+
+	// turn the result array into a clusterNodeResults
+	resultArray, ok := resp.Result.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: expected array, got %T", resp.Result)
+	}
+
+	clusterNodeResults := clusterNodeResults{}
+	for _, item := range resultArray {
+		nodeMap, ok := item.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("invalid node format: expected map, got %T", item)
+		}
+
+		node := clusterNodeResult{}
+		if gossip, ok := nodeMap["gossip"].(string); ok {
+			node.Gossip = gossip
+		}
+		if pubkey, ok := nodeMap["pubkey"].(string); ok {
+			node.Pubkey = pubkey
+		}
+		clusterNodeResults = append(clusterNodeResults, node)
+	}
+	return &clusterNodeResults, nil
+}
+
 // Health checks if the validator is healthy
 func (c *Client) GetHealth() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -183,4 +223,23 @@ func (c *Client) GetIdentity() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	return c.getIdentity(ctx)
+}
+
+// GetNodeWithIdentityPublicKey gets a validator with the given identity public key
+func (c *Client) GetNodeWithIdentityPublicKey(identityPublicKey string) (found bool, node *clusterNodeResult, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	clusterNodes, err := c.getClusterNodes(ctx)
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to get cluster nodes: %w", err)
+	}
+
+	for _, n := range *clusterNodes {
+		if n.Pubkey == identityPublicKey {
+			return true, &n, nil
+		}
+	}
+	// Node not found, but this is not an error - we successfully queried gossip
+	return false, nil, nil
 }

@@ -8,6 +8,8 @@ import (
 type Sync struct {
 	// EnabledWhenActive enables sync when the validator is active
 	EnabledWhenActive bool `koanf:"enabled_when_active"`
+	// EnabledWhenNoActiveLeaderInGossip enables sync when there is no active leader in gossip
+	EnabledWhenNoActiveLeaderInGossip bool `koanf:"enabled_when_no_active_leader_in_gossip"`
 	// EnableSFDPCompliance enables SFDP compliance checking
 	EnableSFDPCompliance bool `koanf:"enable_sfdp_compliance"`
 	// Commands are the commands to run when there is a version change
