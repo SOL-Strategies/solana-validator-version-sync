@@ -148,7 +148,7 @@ func (v *Validator) SyncVersion() (err error) {
 
 		// when active leader in gossip - no problem
 		if hasActiveLeaderInGossip {
-			syncLogger.Info("active leader found in gossip", "identityPublicKey", activeLeaderNode.Pubkey, "ip", strings.Split(activeLeaderNode.Gossip, ":")[0])
+			syncLogger.Infof("active leader found in gossip: %s (%s)", activeLeaderNode.Pubkey, strings.Split(activeLeaderNode.Gossip, ":")[0])
 		} else {
 			// when active leader in gossip - check if we should sync
 			if !v.syncConfig.EnabledWhenNoActiveLeaderInGossip {
