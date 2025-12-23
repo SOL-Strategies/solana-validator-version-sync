@@ -430,3 +430,197 @@ func TestClient_Timeout(t *testing.T) {
 		t.Error("GetHealth() should have timed out")
 	}
 }
+
+func TestClient_getClusterNodes(t *testing.T) {
+	tests := []struct {
+		name           string
+		serverResponse JSONRPCResponse
+		wantNodes      int
+		wantErr        bool
+	}{
+		{
+			name: "successful cluster nodes call",
+			serverResponse: JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      1,
+				Result: []interface{}{
+					map[string]interface{}{
+						"gossip": "127.0.0.1:8001",
+						"pubkey": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+					},
+					map[string]interface{}{
+						"gossip": "127.0.0.1:8002",
+						"pubkey": "AnotherKey123456789012345678901234567890",
+					},
+				},
+			},
+			wantNodes: 2,
+			wantErr:   false,
+		},
+		{
+			name: "empty cluster nodes",
+			serverResponse: JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      1,
+				Result:  []interface{}{},
+			},
+			wantNodes: 0,
+			wantErr:   false,
+		},
+		{
+			name: "RPC error response",
+			serverResponse: JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      1,
+				Error: &RPCError{
+					Code:    -32601,
+					Message: "Method not found",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid response format",
+			serverResponse: JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      1,
+				Result:  "invalid format",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(tt.serverResponse)
+			}))
+			defer server.Close()
+
+			client := NewClient(server.URL)
+			ctx := context.Background()
+
+			nodes, err := client.getClusterNodes(ctx)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getClusterNodes() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				if nodes == nil {
+					t.Error("getClusterNodes() returned nil nodes")
+					return
+				}
+				if len(*nodes) != tt.wantNodes {
+					t.Errorf("getClusterNodes() returned %d nodes, want %d", len(*nodes), tt.wantNodes)
+				}
+			}
+		})
+	}
+}
+
+func TestClient_GetNodeWithIdentityPublicKey(t *testing.T) {
+	tests := []struct {
+		name              string
+		serverResponse    JSONRPCResponse
+		identityPublicKey string
+		wantFound         bool
+		wantNodePubkey    string
+		wantNodeGossip    string
+		wantErr           bool
+	}{
+		{
+			name: "node found",
+			serverResponse: JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      1,
+				Result: []interface{}{
+					map[string]interface{}{
+						"gossip": "127.0.0.1:8001",
+						"pubkey": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+					},
+					map[string]interface{}{
+						"gossip": "127.0.0.1:8002",
+						"pubkey": "AnotherKey123456789012345678901234567890",
+					},
+				},
+			},
+			identityPublicKey: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+			wantFound:         true,
+			wantNodePubkey:    "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+			wantNodeGossip:    "127.0.0.1:8001",
+			wantErr:           false,
+		},
+		{
+			name: "node not found",
+			serverResponse: JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      1,
+				Result: []interface{}{
+					map[string]interface{}{
+						"gossip": "127.0.0.1:8001",
+						"pubkey": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+					},
+				},
+			},
+			identityPublicKey: "NotFoundKey123456789012345678901234567890",
+			wantFound:         false,
+			wantErr:           false, // Node not found is not an error, just not found
+		},
+		{
+			name: "empty cluster nodes",
+			serverResponse: JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      1,
+				Result:  []interface{}{},
+			},
+			identityPublicKey: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+			wantFound:         false,
+			wantErr:           false, // Empty result is not an error, just not found
+		},
+		{
+			name: "RPC error getting cluster nodes",
+			serverResponse: JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      1,
+				Error: &RPCError{
+					Code:    -32601,
+					Message: "Method not found",
+				},
+			},
+			identityPublicKey: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+			wantFound:         false,
+			wantErr:           true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(tt.serverResponse)
+			}))
+			defer server.Close()
+
+			client := NewClient(server.URL)
+
+			found, node, err := client.GetNodeWithIdentityPublicKey(tt.identityPublicKey)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetNodeWithIdentityPublicKey() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if found != tt.wantFound {
+				t.Errorf("GetNodeWithIdentityPublicKey() found = %v, want %v", found, tt.wantFound)
+			}
+
+			if tt.wantFound && node != nil {
+				if node.Pubkey != tt.wantNodePubkey {
+					t.Errorf("GetNodeWithIdentityPublicKey() node.Pubkey = %v, want %v", node.Pubkey, tt.wantNodePubkey)
+				}
+				if node.Gossip != tt.wantNodeGossip {
+					t.Errorf("GetNodeWithIdentityPublicKey() node.Gossip = %v, want %v", node.Gossip, tt.wantNodeGossip)
+				}
+			}
+		})
+	}
+}

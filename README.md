@@ -68,6 +68,11 @@ sync:
   # Use with care, usually only for testnet.
   enabled_when_active: false # default: false
 
+  # Run sync commands when no active validator is found in gossip
+  # This safeguards against situations where all validators are passive and shouldn't be
+  # version synced which would take them out of the would-be active validators pool
+  enabled_when_no_active_leader_in_gossip: false # default: false
+
   # Ensure the target version satisfies SFDP requirements as reported by the API:
   # https://api.solana.org/api/epoch/required_versions
   enable_sfdp_compliance: true # default: false

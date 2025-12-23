@@ -39,6 +39,26 @@ func TestSync_Validate(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "sync with enabled_when_no_active_leader_in_gossip",
+			sync: Sync{
+				EnabledWhenActive:                 false,
+				EnabledWhenNoActiveLeaderInGossip: true,
+				EnableSFDPCompliance:              false,
+				Commands:                          []sync_commands.Command{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "sync with both enabled flags",
+			sync: Sync{
+				EnabledWhenActive:                 true,
+				EnabledWhenNoActiveLeaderInGossip: true,
+				EnableSFDPCompliance:              false,
+				Commands:                          []sync_commands.Command{},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -60,6 +80,9 @@ func TestSync_SetDefaults(t *testing.T) {
 	if sync.EnabledWhenActive != false {
 		t.Errorf("Expected EnabledWhenActive to be false, got %v", sync.EnabledWhenActive)
 	}
+	if sync.EnabledWhenNoActiveLeaderInGossip != false {
+		t.Errorf("Expected EnabledWhenNoActiveLeaderInGossip to be false, got %v", sync.EnabledWhenNoActiveLeaderInGossip)
+	}
 	if sync.EnableSFDPCompliance != false {
 		t.Errorf("Expected EnableSFDPCompliance to be false, got %v", sync.EnableSFDPCompliance)
 	}
@@ -68,13 +91,17 @@ func TestSync_SetDefaults(t *testing.T) {
 func TestSync_StructFields(t *testing.T) {
 	commands := []sync_commands.Command{}
 	sync := Sync{
-		EnabledWhenActive:    true,
-		EnableSFDPCompliance: false,
-		Commands:             commands,
+		EnabledWhenActive:                 true,
+		EnabledWhenNoActiveLeaderInGossip: true,
+		EnableSFDPCompliance:              false,
+		Commands:                          commands,
 	}
 
 	if sync.EnabledWhenActive != true {
 		t.Errorf("Expected EnabledWhenActive to be true, got %v", sync.EnabledWhenActive)
+	}
+	if sync.EnabledWhenNoActiveLeaderInGossip != true {
+		t.Errorf("Expected EnabledWhenNoActiveLeaderInGossip to be true, got %v", sync.EnabledWhenNoActiveLeaderInGossip)
 	}
 	if sync.EnableSFDPCompliance != false {
 		t.Errorf("Expected EnableSFDPCompliance to be false, got %v", sync.EnableSFDPCompliance)

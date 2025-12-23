@@ -2,6 +2,7 @@ package validator
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/hashicorp/go-version"
@@ -108,6 +109,16 @@ func (v *Validator) SyncVersion() (err error) {
 		)
 	}
 
+	// warn if enabled_when_active is true
+	if v.syncConfig.EnabledWhenActive {
+		v.logger.Warn("sync.enabled_when_active=true - syncing will be enabled when the validator is active")
+	}
+
+	// warn when enabled_when_no_active_leader_in_gossip is true
+	if v.syncConfig.EnabledWhenNoActiveLeaderInGossip {
+		v.logger.Warn("sync.enabled_when_no_active_leader_in_gossip=true - syncing will be enabled when no active leader is found in gossip")
+	}
+
 	// refresh the validator's state
 	err = v.refreshState()
 	if err != nil {
@@ -129,6 +140,23 @@ func (v *Validator) SyncVersion() (err error) {
 		}
 		syncLogger.Warnf("validator is %s and sync.enabled_when_active=%t running with scissors ⚠️🏃‍♂️✂️  - syncing", v.Role(), v.syncConfig.EnabledWhenActive)
 	case RolePassive:
+		// we need to safeguard against a situation where a sync could run during an in-flight failover or similar situation where
+		hasActiveLeaderInGossip, activeLeaderNode, err := v.rpcClient.GetNodeWithIdentityPublicKey(v.ActiveIdentityPublicKey)
+		if err != nil {
+			return err
+		}
+
+		// when active leader in gossip - no problem
+		if hasActiveLeaderInGossip {
+			syncLogger.Infof("active leader found in gossip - %s (%s)", activeLeaderNode.Pubkey, strings.Split(activeLeaderNode.Gossip, ":")[0])
+		} else {
+			// when active leader in gossip - check if we should sync
+			if !v.syncConfig.EnabledWhenNoActiveLeaderInGossip {
+				return fmt.Errorf("no active leader found in gossip with identity public key %s and sync.enabled_when_no_active_leader=false - skipping sync", v.ActiveIdentityPublicKey)
+			}
+			syncLogger.Warnf("no active leader found in gossip with identity public key %s and sync.enabled_when_no_active_leader=true - syncing", v.ActiveIdentityPublicKey)
+		}
+
 		syncLogger.Infof("validator is %s - syncing", v.Role())
 	default:
 		return fmt.Errorf("validator identity public key %s is not %s or %s - skipping sync", v.State.IdentityPublicKey, RoleActive, RolePassive)
