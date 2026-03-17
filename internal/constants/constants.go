@@ -11,8 +11,6 @@ const (
 	ClientNameAgave = "agave"
 	// ClientNameJitoSolana is the name of the Jito Solana client
 	ClientNameJitoSolana = "jito-solana"
-	// ClientNameBAM is the anem of the BAM client
-	ClientNameBAM = "bam-client"
 	// ClientNameFiredancer is the name of the Firedancer client
 	ClientNameFiredancer = "firedancer"
 	// ClusterNameMainnetBeta is the name of the Mainnet Beta cluster
@@ -22,7 +20,7 @@ const (
 )
 
 // ValidClientNames is a list of valid client names
-var ValidClientNames = []string{ClientNameAgave, ClientNameJitoSolana, ClientNameBAM, ClientNameFiredancer}
+var ValidClientNames = []string{ClientNameAgave, ClientNameJitoSolana, ClientNameFiredancer}
 
 // ValidClusterNames is a list of valid cluster names
 var ValidClusterNames = []string{ClusterNameMainnetBeta, ClusterNameTestnet}

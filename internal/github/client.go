@@ -109,7 +109,7 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 		for _, cluster := range constants.ValidClusterNames {
 			versionStrings[cluster] = versionsFromReleaseBodyRegex(releases, c.releaseNotesRegexes[cluster])
 		}
-	case constants.ClientNameJitoSolana, constants.ClientNameFiredancer, constants.ClientNameBAM:
+	case constants.ClientNameJitoSolana, constants.ClientNameFiredancer:
 		// jito-solana and firedancer flags release cluster in release title prefix
 		for _, cluster := range constants.ValidClusterNames {
 			versionStrings[cluster] = versionsFromReleaseTitleRegex(releases, c.releaseTitleRegexes[cluster])
