@@ -243,6 +243,7 @@ func (v *Validator) SyncVersion() (err error) {
 			ClusterName:                 v.State.Cluster,
 			VersionFrom:                 versionDiff.From.Core().String(),
 			VersionTo:                   versionDiff.To.Core().String(),
+			VersionToTag:                versionDiff.To.Original(),
 			SyncIsSFDPComplianceEnabled: v.syncConfig.EnableSFDPCompliance,
 		})
 		if err != nil {
