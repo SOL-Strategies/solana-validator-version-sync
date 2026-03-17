@@ -1,6 +1,7 @@
 package github
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -151,13 +152,13 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			clientName: constants.ClientNameJitoSolana,
 			cluster:    constants.ClusterNameMainnetBeta,
 			regexType:  "ReleaseTitleRegex",
-			regex:      "^Mainnet - v([0-9]+\\.[0-9]+\\.[0-9]+)-jito(?:\\.([0-9]+))?$",
+			regex:      "^Mainnet - v([0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?)-jito(?:\\.[0-9]+)?$",
 		},
 		{
 			clientName: constants.ClientNameJitoSolana,
 			cluster:    constants.ClusterNameTestnet,
 			regexType:  "ReleaseTitleRegex",
-			regex:      "^Testnet - v([0-9]+\\.[0-9]+\\.[0-9]+)-jito(?:\\.([0-9]+))?$",
+			regex:      "^Testnet - v([0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?)-jito(?:\\.[0-9]+)?$",
 		},
 		{
 			clientName: constants.ClientNameFiredancer,
@@ -198,4 +199,81 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 	}
 }
 
+func TestClientRepoConfigs_JitoSolanaReleaseTitleRegex(t *testing.T) {
+	config := clientRepoConfigs[constants.ClientNameJitoSolana]
 
+	tests := []struct {
+		name            string
+		cluster         string
+		releaseTitle    string
+		shouldMatch     bool
+		expectedVersion string
+	}{
+		{
+			name:            "Mainnet stable",
+			cluster:         constants.ClusterNameMainnetBeta,
+			releaseTitle:    "Mainnet - v3.1.10-jito",
+			shouldMatch:     true,
+			expectedVersion: "3.1.10",
+		},
+		{
+			name:            "Testnet stable",
+			cluster:         constants.ClusterNameTestnet,
+			releaseTitle:    "Testnet - v3.1.7-jito",
+			shouldMatch:     true,
+			expectedVersion: "3.1.7",
+		},
+		{
+			name:            "Testnet pre-release beta",
+			cluster:         constants.ClusterNameTestnet,
+			releaseTitle:    "Testnet - v4.0.0-beta.2-jito",
+			shouldMatch:     true,
+			expectedVersion: "4.0.0-beta.2",
+		},
+		{
+			name:            "Mainnet jito.N patch suffix",
+			cluster:         constants.ClusterNameMainnetBeta,
+			releaseTitle:    "Mainnet - v3.0.6-jito.1",
+			shouldMatch:     true,
+			expectedVersion: "3.0.6",
+		},
+		{
+			name:         "Mainnet missing jito suffix",
+			cluster:      constants.ClusterNameMainnetBeta,
+			releaseTitle: "Mainnet - v3.1.10",
+			shouldMatch:  false,
+		},
+		{
+			name:         "Wrong network prefix",
+			cluster:      constants.ClusterNameMainnetBeta,
+			releaseTitle: "Testnet - v3.1.10-jito",
+			shouldMatch:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			regexStr, exists := config.ReleaseTitleRegexes[tt.cluster]
+			if !exists {
+				t.Fatalf("ReleaseTitleRegex not found for cluster: %s", tt.cluster)
+			}
+
+			re := regexp.MustCompile(regexStr)
+			matches := re.FindStringSubmatch(tt.releaseTitle)
+
+			if tt.shouldMatch {
+				if matches == nil {
+					t.Errorf("Expected regex to match %q, but it didn't", tt.releaseTitle)
+					return
+				}
+				if matches[1] != tt.expectedVersion {
+					t.Errorf("Expected version %q, got %q", tt.expectedVersion, matches[1])
+				}
+			} else {
+				if matches != nil {
+					t.Errorf("Expected regex to NOT match %q, but it did (matched: %v)", tt.releaseTitle, matches)
+				}
+			}
+		})
+	}
+}
