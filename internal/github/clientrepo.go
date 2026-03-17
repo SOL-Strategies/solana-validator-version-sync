@@ -20,8 +20,8 @@ var clientRepoConfigs = map[string]ClientRepoConfig{
 	constants.ClientNameJitoSolana: {
 		URL: "https://github.com/jito-foundation/jito-solana",
 		ReleaseTitleRegexes: map[string]string{
-			constants.ClusterNameMainnetBeta: "^Mainnet - v([0-9]+\\.[0-9]+\\.[0-9]+)-jito(?:\\.([0-9]+))?$",
-			constants.ClusterNameTestnet:     "^Testnet - v([0-9]+\\.[0-9]+\\.[0-9]+)-jito(?:\\.([0-9]+))?$",
+			constants.ClusterNameMainnetBeta: "^Mainnet - v([0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?)-jito(?:\\.[0-9]+)?$",
+			constants.ClusterNameTestnet:     "^Testnet - v([0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?)-jito(?:\\.[0-9]+)?$",
 		},
 	},
 	constants.ClientNameFiredancer: {
