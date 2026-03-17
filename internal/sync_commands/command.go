@@ -60,6 +60,7 @@ type CommandTemplateData struct {
 	ClusterName                 string
 	VersionFrom                 string
 	VersionTo                   string
+	VersionToTag                string // full original tag from upstream repo, e.g. "v4.0.0-beta.2-jito"
 	SyncIsSFDPComplianceEnabled bool
 }
 

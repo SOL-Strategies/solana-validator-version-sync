@@ -90,7 +90,8 @@ sync:
   #  .ValidatorRoleIsPassive      true|false
   #  .ValidatorRPCURL             RPC URL of the validator (value of validator.rpc_url)
   #  .VersionFrom                 current running version as reported by .ValidatorRPCURL
-  #  .VersionTo:                  sync target version
+  #  .VersionTo                   sync target version (core semver only, e.g. "4.0.0")
+  #  .VersionToTag                full upstream release tag for the sync target (e.g. "v4.0.0-beta.2-jito")
   commands:
     - name: "build"                                      # required - vanity name for logging purposes
       allow_failure: false                               # optional, default:false - when true, errors are logged and subsequent commands executed
