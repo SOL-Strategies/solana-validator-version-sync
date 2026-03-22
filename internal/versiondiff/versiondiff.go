@@ -23,17 +23,17 @@ type VersionDiff struct {
 
 // IsSameVersion checks if the from and to versions are the same
 func (v *VersionDiff) IsSameVersion() bool {
-	return v.From.Core().Equal(v.To.Core())
+	return v.From.Equal(v.To)
 }
 
 // IsUpgrade checks if the from version is less than the to version
 func (v *VersionDiff) IsUpgrade() bool {
-	return v.To.Core().GreaterThan(v.From.Core())
+	return v.To.GreaterThan(v.From)
 }
 
 // IsDowngrade checks if the from version is greater than the to version
 func (v *VersionDiff) IsDowngrade() bool {
-	return v.To.Core().LessThan(v.From.Core())
+	return v.To.LessThan(v.From)
 }
 
 // Direction gets the direction of the version diff as a string

@@ -63,7 +63,7 @@ func TestVersionDiff_IsSameVersion(t *testing.T) {
 			name:     "versions with different pre-release",
 			from:     "1.18.0-beta.1",
 			to:       "1.18.0-beta.2",
-			expected: true, // hashicorp/go-version considers these equal
+			expected: false,
 		},
 		{
 			name:     "versions with build metadata",
@@ -146,13 +146,13 @@ func TestVersionDiff_IsUpgrade(t *testing.T) {
 			name:     "pre-release upgrade",
 			from:     "1.18.0-beta.1",
 			to:       "1.18.0-beta.2",
-			expected: false, // hashicorp/go-version considers these equal
+			expected: true,
 		},
 		{
 			name:     "pre-release to release",
 			from:     "1.18.0-beta.1",
 			to:       "1.18.0",
-			expected: false, // hashicorp/go-version considers these equal
+			expected: true,
 		},
 	}
 
@@ -223,13 +223,13 @@ func TestVersionDiff_IsDowngrade(t *testing.T) {
 			name:     "pre-release downgrade",
 			from:     "1.18.0-beta.2",
 			to:       "1.18.0-beta.1",
-			expected: false, // hashicorp/go-version considers these equal
+			expected: true,
 		},
 		{
 			name:     "release to pre-release",
 			from:     "1.18.0",
 			to:       "1.18.0-beta.1",
-			expected: false, // hashicorp/go-version considers these equal
+			expected: true,
 		},
 	}
 
@@ -301,25 +301,25 @@ func TestVersionDiff_Direction(t *testing.T) {
 			name:     "pre-release upgrade",
 			from:     "1.18.0-beta.1",
 			to:       "1.18.0-beta.2",
-			expected: "same", // hashicorp/go-version considers these equal
+			expected: "upgrade",
 		},
 		{
 			name:     "pre-release downgrade",
 			from:     "1.18.0-beta.2",
 			to:       "1.18.0-beta.1",
-			expected: "same", // hashicorp/go-version considers these equal
+			expected: "downgrade",
 		},
 		{
 			name:     "pre-release to release",
 			from:     "1.18.0-beta.1",
 			to:       "1.18.0",
-			expected: "same", // hashicorp/go-version considers these equal
+			expected: "upgrade",
 		},
 		{
 			name:     "release to pre-release",
 			from:     "1.18.0",
 			to:       "1.18.0-beta.1",
-			expected: "same", // hashicorp/go-version considers these equal
+			expected: "downgrade",
 		},
 	}
 
