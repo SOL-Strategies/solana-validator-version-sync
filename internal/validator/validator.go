@@ -162,16 +162,24 @@ func (v *Validator) SyncVersion() (err error) {
 		return fmt.Errorf("validator identity public key %s is not %s or %s - skipping sync", v.State.IdentityPublicKey, RoleActive, RolePassive)
 	}
 
-	// set a version we'll target as part of a diff
-	syncLogger.Debug("creating version diff", "from", v.State.Version, "fromString", v.State.VersionString)
-	versionDiff := versiondiff.VersionDiff{
-		From: v.State.Version,
-	}
-
 	// by default target the latest client version for the cluster
-	versionDiff.To, err = v.githubClient.GetLatestClientVersion()
+	// (must be called before NormalizeToTagVersion to populate the tag version cache)
+	latestClientVersion, err := v.githubClient.GetLatestClientVersion()
 	if err != nil {
 		return err
+	}
+
+	// set a version we'll target as part of a diff
+	// NormalizeToTagVersion translates the running version to the tag-format equivalent for
+	// clients (like firedancer) where the binary reports a different version than the git tag
+	normalizedFrom := v.githubClient.NormalizeToTagVersion(v.State.Version)
+	syncLogger.Debug("creating version diff",
+		"fromRaw", v.State.VersionString,
+		"fromNormalized", normalizedFrom.Original(),
+	)
+	versionDiff := versiondiff.VersionDiff{
+		From: normalizedFrom,
+		To:   latestClientVersion,
 	}
 
 	syncLogger.Debug("latest release from repo", "version", versionDiff.To.String())
