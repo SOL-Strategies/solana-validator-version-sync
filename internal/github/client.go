@@ -186,10 +186,20 @@ func (c *Client) GetRepoURL() string {
 }
 
 // NormalizeToTagVersion translates a running version to its equivalent tag version.
-// For firedancer, the binary reports a different middle component than what appears in
-// git tags (e.g. 0.33670.40002 vs tag v0.902.40002). The feature set (3rd component)
-// is stable across both representations and uniquely identifies the release, so we use
-// it to look up the correct tag version from the cached list.
+//
+// Firedancer reports its version differently depending on the source:
+//   - GitHub tags use EPOCH.RELEASE.FEATURESET  (e.g. v0.902.40002)
+//   - Solana RPC getVersion solana-core field may return EPOCH.RELEASE.0 (e.g. 0.902.0)
+//     when the feature-set is not embedded in the version string
+//   - After firedancer PR #8945 the binary/RPC may report EPOCH.COMMITCOUNT.FEATURESET
+//     (e.g. 0.33670.40002) where COMMITCOUNT differs from RELEASE
+//
+// To bridge these representations we try two matching strategies in order:
+//  1. Feature-set match (PATCH component): works when the running version embeds the
+//     feature-set (PATCH > 0), e.g. 0.33670.40002 → v0.902.40002
+//  2. MAJOR.MINOR match: works when the running version reports PATCH as 0,
+//     e.g. 0.902.0 → v0.902.40002
+//
 // For all other clients the version is returned unchanged.
 func (c *Client) NormalizeToTagVersion(v *version.Version) *version.Version {
 	if c.clientName != constants.ClientNameFiredancer {
@@ -199,16 +209,34 @@ func (c *Client) NormalizeToTagVersion(v *version.Version) *version.Version {
 	if len(segs) < 3 {
 		return v
 	}
+
+	// Strategy 1: match by feature-set (PATCH) when it is non-zero.
+	// Handles the case where the running version embeds the feature-set but uses a
+	// different MINOR, e.g. 0.33670.40002 matching tag v0.902.40002.
 	featureSet := segs[2]
+	if featureSet != 0 {
+		for _, tagged := range c.cachedTagVersions {
+			tagSegs := tagged.Segments()
+			if len(tagSegs) >= 3 && tagSegs[2] == featureSet {
+				c.logger.Debug("normalized firedancer running version to tag version (feature-set match)",
+					"running", v.Original(), "tag", tagged.Original())
+				return tagged
+			}
+		}
+	}
+
+	// Strategy 2: match by MAJOR.MINOR when PATCH is zero (or feature-set match found nothing).
+	// Handles the case where the RPC returns EPOCH.RELEASE.0, e.g. 0.902.0 matching tag v0.902.40002.
 	for _, tagged := range c.cachedTagVersions {
 		tagSegs := tagged.Segments()
-		if len(tagSegs) >= 3 && tagSegs[2] == featureSet {
-			c.logger.Debug("normalized firedancer running version to tag version",
+		if len(tagSegs) >= 3 && tagSegs[0] == segs[0] && tagSegs[1] == segs[1] {
+			c.logger.Debug("normalized firedancer running version to tag version (major.minor match)",
 				"running", v.Original(), "tag", tagged.Original())
 			return tagged
 		}
 	}
-	c.logger.Warn("could not normalize firedancer running version to tag version - no cached tag with matching feature set",
+
+	c.logger.Warn("could not normalize firedancer running version to tag version - no cached tag matched by feature-set or major.minor",
 		"running", v.Original(), "featureSet", featureSet)
 	return v
 }
