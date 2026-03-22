@@ -217,20 +217,37 @@ func TestNormalizeToTagVersion(t *testing.T) {
 		input          string
 		want           string
 	}{
+		// Feature-set (PATCH) matching: post-PR #8945 RPC format where MINOR differs from tag
 		{
-			name:           "firedancer: normalizes 0.33670.40002 to 0.902.40002 by matching feature set",
+			name:           "firedancer: normalizes 0.33670.40002 to 0.902.40002 by feature-set match",
 			clientName:     constants.ClientNameFiredancer,
 			cachedVersions: []string{"v0.902.40002"},
 			input:          "0.33670.40002",
 			want:           "0.902.40002",
 		},
 		{
-			name:           "firedancer: returns unchanged when no cached tag matches feature set",
+			name:           "firedancer: picks correct tag from multiple cached versions via feature-set",
 			clientName:     constants.ClientNameFiredancer,
-			cachedVersions: []string{"v0.902.40001"},
+			cachedVersions: []string{"v0.901.40001", "v0.902.40002", "v0.903.40003"},
 			input:          "0.33670.40002",
-			want:           "0.33670.40002",
+			want:           "0.902.40002",
 		},
+		// MAJOR.MINOR matching: current RPC format where PATCH is 0 (e.g. 0.902.0 vs tag v0.902.40002)
+		{
+			name:           "firedancer: normalizes 0.902.0 to 0.902.40002 by major.minor match",
+			clientName:     constants.ClientNameFiredancer,
+			cachedVersions: []string{"v0.902.40002"},
+			input:          "0.902.0",
+			want:           "0.902.40002",
+		},
+		{
+			name:           "firedancer: picks correct tag from multiple cached versions via major.minor",
+			clientName:     constants.ClientNameFiredancer,
+			cachedVersions: []string{"v0.901.40001", "v0.902.40002", "v0.903.40003"},
+			input:          "0.902.0",
+			want:           "0.902.40002",
+		},
+		// Fallback: no match
 		{
 			name:           "firedancer: returns unchanged when cache is empty",
 			clientName:     constants.ClientNameFiredancer,
@@ -238,6 +255,14 @@ func TestNormalizeToTagVersion(t *testing.T) {
 			input:          "0.33670.40002",
 			want:           "0.33670.40002",
 		},
+		{
+			name:           "firedancer: returns unchanged when no cached tag matches either strategy",
+			clientName:     constants.ClientNameFiredancer,
+			cachedVersions: []string{"v0.901.40001"},
+			input:          "0.33670.40002",
+			want:           "0.33670.40002",
+		},
+		// Other clients: always passthrough
 		{
 			name:           "agave: returns version unchanged regardless of cache",
 			clientName:     constants.ClientNameAgave,
@@ -251,13 +276,6 @@ func TestNormalizeToTagVersion(t *testing.T) {
 			cachedVersions: []string{"v1.18.0"},
 			input:          "1.18.0",
 			want:           "1.18.0",
-		},
-		{
-			name:           "firedancer: picks correct tag from multiple cached versions",
-			clientName:     constants.ClientNameFiredancer,
-			cachedVersions: []string{"v0.901.40001", "v0.902.40002", "v0.903.40003"},
-			input:          "0.33670.40002",
-			want:           "0.902.40002",
 		},
 	}
 
