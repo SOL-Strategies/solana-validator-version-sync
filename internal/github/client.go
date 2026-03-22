@@ -37,6 +37,8 @@ type Client struct {
 	client              *github.Client
 	cluster             string
 	logger              *log.Logger
+	// cachedTagVersions holds all parsed tag versions from the last GetLatestClientVersion call
+	cachedTagVersions []*version.Version
 }
 
 // Options represents the options for creating a new GitHub client
@@ -125,9 +127,11 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 
 	// For each cluster, create a versions slice and sort, and get the latest version
 	latestClusterVersion := make(map[string]*version.Version)
+	c.cachedTagVersions = nil
 	for cluster, versionStrings := range versionStrings {
 		sortedVersions := c.sortedVersionsFromVersionStrings(versionStrings)
 		latestClusterVersion[cluster] = sortedVersions[len(sortedVersions)-1]
+		c.cachedTagVersions = append(c.cachedTagVersions, sortedVersions...)
 		c.logger.Debug("latest version "+latestClusterVersion[cluster].Core().String(), "client", c.clientName, "cluster", cluster, "repoURL", c.repoURL+"/releases")
 	}
 
@@ -179,6 +183,34 @@ func (c *Client) HasTaggedVersion(testVersion *version.Version) (hasTaggedVersio
 
 func (c *Client) GetRepoURL() string {
 	return c.repoURL
+}
+
+// NormalizeToTagVersion translates a running version to its equivalent tag version.
+// For firedancer, the binary reports a different middle component than what appears in
+// git tags (e.g. 0.33670.40002 vs tag v0.902.40002). The feature set (3rd component)
+// is stable across both representations and uniquely identifies the release, so we use
+// it to look up the correct tag version from the cached list.
+// For all other clients the version is returned unchanged.
+func (c *Client) NormalizeToTagVersion(v *version.Version) *version.Version {
+	if c.clientName != constants.ClientNameFiredancer {
+		return v
+	}
+	segs := v.Segments()
+	if len(segs) < 3 {
+		return v
+	}
+	featureSet := segs[2]
+	for _, tagged := range c.cachedTagVersions {
+		tagSegs := tagged.Segments()
+		if len(tagSegs) >= 3 && tagSegs[2] == featureSet {
+			c.logger.Debug("normalized firedancer running version to tag version",
+				"running", v.Original(), "tag", tagged.Original())
+			return tagged
+		}
+	}
+	c.logger.Warn("could not normalize firedancer running version to tag version - no cached tag with matching feature set",
+		"running", v.Original(), "featureSet", featureSet)
+	return v
 }
 
 // versionsFromReleaseTitleRegex gets versions from releases with titles matching the supplied regex

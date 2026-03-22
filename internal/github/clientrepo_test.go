@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/log"
+	goversion "github.com/hashicorp/go-version"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/constants"
 )
 
@@ -194,6 +196,87 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 
 			if actualRegex != tt.regex {
 				t.Errorf("%s = %v, want %v", tt.regexType, actualRegex, tt.regex)
+			}
+		})
+	}
+}
+
+func TestNormalizeToTagVersion(t *testing.T) {
+	mustVersion := func(s string) *goversion.Version {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		return v
+	}
+
+	tests := []struct {
+		name           string
+		clientName     string
+		cachedVersions []string
+		input          string
+		want           string
+	}{
+		{
+			name:           "firedancer: normalizes 0.33670.40002 to 0.902.40002 by matching feature set",
+			clientName:     constants.ClientNameFiredancer,
+			cachedVersions: []string{"v0.902.40002"},
+			input:          "0.33670.40002",
+			want:           "0.902.40002",
+		},
+		{
+			name:           "firedancer: returns unchanged when no cached tag matches feature set",
+			clientName:     constants.ClientNameFiredancer,
+			cachedVersions: []string{"v0.902.40001"},
+			input:          "0.33670.40002",
+			want:           "0.33670.40002",
+		},
+		{
+			name:           "firedancer: returns unchanged when cache is empty",
+			clientName:     constants.ClientNameFiredancer,
+			cachedVersions: []string{},
+			input:          "0.33670.40002",
+			want:           "0.33670.40002",
+		},
+		{
+			name:           "agave: returns version unchanged regardless of cache",
+			clientName:     constants.ClientNameAgave,
+			cachedVersions: []string{"v0.902.40002"},
+			input:          "0.902.40002",
+			want:           "0.902.40002",
+		},
+		{
+			name:           "jito-solana: returns version unchanged",
+			clientName:     constants.ClientNameJitoSolana,
+			cachedVersions: []string{"v1.18.0"},
+			input:          "1.18.0",
+			want:           "1.18.0",
+		},
+		{
+			name:           "firedancer: picks correct tag from multiple cached versions",
+			clientName:     constants.ClientNameFiredancer,
+			cachedVersions: []string{"v0.901.40001", "v0.902.40002", "v0.903.40003"},
+			input:          "0.33670.40002",
+			want:           "0.902.40002",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cached := make([]*goversion.Version, 0, len(tt.cachedVersions))
+			for _, s := range tt.cachedVersions {
+				cached = append(cached, mustVersion(s))
+			}
+
+			c := &Client{
+				clientName:        tt.clientName,
+				cachedTagVersions: cached,
+				logger:            log.WithPrefix("test"),
+			}
+
+			got := c.NormalizeToTagVersion(mustVersion(tt.input))
+			if got.Core().String() != mustVersion(tt.want).Core().String() {
+				t.Errorf("NormalizeToTagVersion(%q) = %q, want %q", tt.input, got.Core().String(), tt.want)
 			}
 		})
 	}
