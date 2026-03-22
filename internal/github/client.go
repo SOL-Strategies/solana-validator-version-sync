@@ -241,9 +241,13 @@ func (c *Client) NormalizeToTagVersion(v *version.Version) *version.Version {
 	return v
 }
 
-// versionsFromReleaseTitleRegex gets versions from releases with titles matching the supplied regex
+// versionsFromReleaseTitleRegex gets versions from non-prerelease releases with titles matching the supplied regex
 func versionsFromReleaseTitleRegex(releases []*github.RepositoryRelease, regex *regexp.Regexp) (versionStrings []string) {
 	for _, release := range releases {
+		if release.GetPrerelease() {
+			log.Debug("skipping github pre-release", "title", release.GetName(), "tag", release.GetTagName())
+			continue
+		}
 		if regex.MatchString(release.GetName()) {
 			log.Debug("found matching release", "title", release.GetName(), "tag", release.GetTagName(), "version", release.GetTagName())
 			versionStrings = append(versionStrings, release.GetTagName())
@@ -252,9 +256,13 @@ func versionsFromReleaseTitleRegex(releases []*github.RepositoryRelease, regex *
 	return versionStrings
 }
 
-// versionsFromReleaseBodyRegex gets versions from releases with bodies matching the supplied regex
+// versionsFromReleaseBodyRegex gets versions from non-prerelease releases with bodies matching the supplied regex
 func versionsFromReleaseBodyRegex(releases []*github.RepositoryRelease, regex *regexp.Regexp) (versionStrings []string) {
 	for _, release := range releases {
+		if release.GetPrerelease() {
+			log.Debug("skipping github pre-release", "title", release.GetName(), "tag", release.GetTagName())
+			continue
+		}
 		if regex.MatchString(release.GetBody()) {
 			versionStrings = append(versionStrings, release.GetTagName())
 		}
