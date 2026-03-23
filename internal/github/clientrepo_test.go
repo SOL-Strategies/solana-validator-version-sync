@@ -247,7 +247,7 @@ func TestNormalizeToTagVersion(t *testing.T) {
 			input:          "0.902.0",
 			want:           "0.902.40002",
 		},
-		// Fallback: no match
+		// Firedancer fallback: no match
 		{
 			name:           "firedancer: returns unchanged when cache is empty",
 			clientName:     constants.ClientNameFiredancer,
@@ -262,20 +262,63 @@ func TestNormalizeToTagVersion(t *testing.T) {
 			input:          "0.33670.40002",
 			want:           "0.33670.40002",
 		},
-		// Other clients: always passthrough
+		// Jito-Solana: RPC omits -jito suffix present in git tags
 		{
-			name:           "agave: returns version unchanged regardless of cache",
-			clientName:     constants.ClientNameAgave,
-			cachedVersions: []string{"v0.902.40002"},
-			input:          "0.902.40002",
-			want:           "0.902.40002",
+			name:           "jito-solana: normalizes 4.0.0-beta.2 to v4.0.0-beta.2-jito by stripping -jito suffix",
+			clientName:     constants.ClientNameJitoSolana,
+			cachedVersions: []string{"v4.0.0-beta.2-jito"},
+			input:          "4.0.0-beta.2",
+			want:           "4.0.0-beta.2-jito",
 		},
 		{
-			name:           "jito-solana: returns version unchanged",
+			name:           "jito-solana: normalizes stable release 3.1.10 to v3.1.10-jito",
 			clientName:     constants.ClientNameJitoSolana,
-			cachedVersions: []string{"v1.18.0"},
-			input:          "1.18.0",
-			want:           "1.18.0",
+			cachedVersions: []string{"v3.1.10-jito"},
+			input:          "3.1.10",
+			want:           "3.1.10-jito",
+		},
+		{
+			name:           "jito-solana: normalizes with -jito.N patch suffix in tag",
+			clientName:     constants.ClientNameJitoSolana,
+			cachedVersions: []string{"v3.0.6-jito.1"},
+			input:          "3.0.6",
+			want:           "3.0.6-jito.1",
+		},
+		{
+			name:           "jito-solana: picks correct tag from multiple cached versions",
+			clientName:     constants.ClientNameJitoSolana,
+			cachedVersions: []string{"v3.1.9-jito", "v3.1.10-jito", "v4.0.0-beta.2-jito"},
+			input:          "3.1.10",
+			want:           "3.1.10-jito",
+		},
+		{
+			name:           "jito-solana: returns unchanged when no cached tag matches",
+			clientName:     constants.ClientNameJitoSolana,
+			cachedVersions: []string{"v3.1.10-jito"},
+			input:          "4.0.0-beta.2",
+			want:           "4.0.0-beta.2",
+		},
+		// Agave: RPC version matches tag directly (no client suffix)
+		{
+			name:           "agave: returns matching cached tag for pre-release version",
+			clientName:     constants.ClientNameAgave,
+			cachedVersions: []string{"v2.2.8-beta.1"},
+			input:          "2.2.8-beta.1",
+			want:           "2.2.8-beta.1",
+		},
+		{
+			name:           "agave: returns matching cached tag for stable version",
+			clientName:     constants.ClientNameAgave,
+			cachedVersions: []string{"v2.2.8"},
+			input:          "2.2.8",
+			want:           "2.2.8",
+		},
+		{
+			name:           "agave: returns unchanged when no cached tag matches",
+			clientName:     constants.ClientNameAgave,
+			cachedVersions: []string{"v2.2.7"},
+			input:          "2.2.8",
+			want:           "2.2.8",
 		},
 	}
 
