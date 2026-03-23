@@ -22,6 +22,10 @@ var (
 	// Regex pattern to match both HTTPS and SSH GitHub URLs
 	// Group 1: owner, Group 2: repo (without .git suffix)
 	githubRepoAndOwnerFromURLRegex = regexp.MustCompile(`(?:https://github\.com/|git@github\.com:)([^/]+)/([^/]+?)(?:\.git)?$`)
+
+	// jitoVersionSuffixRegex matches the -jito[.N] suffix in jito-solana git tags
+	// (e.g. v4.0.0-beta.2-jito, v3.1.10-jito.1). The RPC does not include this suffix.
+	jitoVersionSuffixRegex = regexp.MustCompile(`-jito(\.\d+)?$`)
 )
 
 // Client represents a GitHub API client
@@ -185,59 +189,100 @@ func (c *Client) GetRepoURL() string {
 	return c.repoURL
 }
 
-// NormalizeToTagVersion translates a running version to its equivalent tag version.
+// NormalizeToTagVersion translates the running version reported by the validator RPC
+// into its equivalent git tag version from the cached release list. This is necessary
+// because several clients append a client-specific suffix to their git tags that the
+// RPC does not include, or encode the version differently from the tag.
 //
-// Firedancer reports its version differently depending on the source:
-//   - GitHub tags use EPOCH.RELEASE.FEATURESET  (e.g. v0.902.40002)
-//   - Solana RPC getVersion solana-core field may return EPOCH.RELEASE.0 (e.g. 0.902.0)
-//     when the feature-set is not embedded in the version string
-//   - After firedancer PR #8945 the binary/RPC may report EPOCH.COMMITCOUNT.FEATURESET
-//     (e.g. 0.33670.40002) where COMMITCOUNT differs from RELEASE
+// Jito-Solana:
+//   - RPC reports: 4.0.0-beta.2
+//   - Git tag:     v4.0.0-beta.2-jito  (or v3.1.10-jito.1)
+//   - Strategy: strip -jito[.N] from each cached tag and compare to the running version
 //
-// To bridge these representations we try two matching strategies in order:
-//  1. Feature-set match (PATCH component): works when the running version embeds the
-//     feature-set (PATCH > 0), e.g. 0.33670.40002 → v0.902.40002
-//  2. MAJOR.MINOR match: works when the running version reports PATCH as 0,
-//     e.g. 0.902.0 → v0.902.40002
+// Agave:
+//   - RPC reports: 2.2.8-beta.1
+//   - Git tag:     v2.2.8-beta.1  (no suffix — already matches)
+//   - Strategy: direct equality match against cached tags
 //
-// For all other clients the version is returned unchanged.
+// Firedancer:
+//   - RPC may report: 0.902.0-beta.40002  or  0.33670.40002
+//   - Git tag:        v0.902.40002
+//   - Strategy 1: match by feature-set (PATCH > 0), e.g. 0.33670.40002 → v0.902.40002
+//   - Strategy 2: match by MAJOR.MINOR when PATCH is 0, e.g. 0.902.0 → v0.902.40002
+//
+// If no match is found the running version is returned unchanged as a safe fallback.
 func (c *Client) NormalizeToTagVersion(v *version.Version) *version.Version {
-	if c.clientName != constants.ClientNameFiredancer {
-		return v
-	}
-	segs := v.Segments()
-	if len(segs) < 3 {
-		return v
-	}
+	switch c.clientName {
 
-	// Strategy 1: match by feature-set (PATCH) when it is non-zero.
-	// Handles the case where the running version embeds the feature-set but uses a
-	// different MINOR, e.g. 0.33670.40002 matching tag v0.902.40002.
-	featureSet := segs[2]
-	if featureSet != 0 {
+	case constants.ClientNameJitoSolana:
+		// Jito tags carry a -jito[.N] suffix not present in the RPC version.
+		// Strip it from each cached tag and compare to find the matching tag version.
 		for _, tagged := range c.cachedTagVersions {
-			tagSegs := tagged.Segments()
-			if len(tagSegs) >= 3 && tagSegs[2] == featureSet {
-				c.logger.Debug("normalized firedancer running version to tag version (feature-set match)",
+			stripped := jitoVersionSuffixRegex.ReplaceAllString(tagged.Original(), "")
+			strippedVersion, err := version.NewVersion(stripped)
+			if err != nil {
+				continue
+			}
+			if strippedVersion.Equal(v) {
+				c.logger.Debug("normalized jito-solana running version to tag version",
 					"running", v.Original(), "tag", tagged.Original())
 				return tagged
 			}
 		}
-	}
+		c.logger.Warn("could not normalize jito-solana running version to tag version - no cached tag matched after stripping -jito suffix",
+			"running", v.Original())
+		return v
 
-	// Strategy 2: match by MAJOR.MINOR when PATCH is zero (or feature-set match found nothing).
-	// Handles the case where the RPC returns EPOCH.RELEASE.0, e.g. 0.902.0 matching tag v0.902.40002.
-	for _, tagged := range c.cachedTagVersions {
-		tagSegs := tagged.Segments()
-		if len(tagSegs) >= 3 && tagSegs[0] == segs[0] && tagSegs[1] == segs[1] {
-			c.logger.Debug("normalized firedancer running version to tag version (major.minor match)",
-				"running", v.Original(), "tag", tagged.Original())
-			return tagged
+	case constants.ClientNameAgave:
+		// Agave tags match the RPC version directly (no client suffix).
+		// Perform an explicit lookup so pre-release metadata in the tag Original()
+		// is preserved for VersionToTag even when the running version string differs
+		// only in formatting (e.g. leading 'v').
+		for _, tagged := range c.cachedTagVersions {
+			if tagged.Equal(v) {
+				return tagged
+			}
 		}
+		// No cached tag found — return unchanged (version already matches or is not yet released)
+		return v
+
+	case constants.ClientNameFiredancer:
+		segs := v.Segments()
+		if len(segs) < 3 {
+			return v
+		}
+
+		// Strategy 1: match by feature-set (PATCH) when it is non-zero.
+		// Handles the case where the running version embeds the feature-set but uses a
+		// different MINOR, e.g. 0.33670.40002 matching tag v0.902.40002.
+		featureSet := segs[2]
+		if featureSet != 0 {
+			for _, tagged := range c.cachedTagVersions {
+				tagSegs := tagged.Segments()
+				if len(tagSegs) >= 3 && tagSegs[2] == featureSet {
+					c.logger.Debug("normalized firedancer running version to tag version (feature-set match)",
+						"running", v.Original(), "tag", tagged.Original())
+					return tagged
+				}
+			}
+		}
+
+		// Strategy 2: match by MAJOR.MINOR when PATCH is zero (or feature-set match found nothing).
+		// Handles the case where the RPC returns EPOCH.RELEASE.0, e.g. 0.902.0 matching tag v0.902.40002.
+		for _, tagged := range c.cachedTagVersions {
+			tagSegs := tagged.Segments()
+			if len(tagSegs) >= 3 && tagSegs[0] == segs[0] && tagSegs[1] == segs[1] {
+				c.logger.Debug("normalized firedancer running version to tag version (major.minor match)",
+					"running", v.Original(), "tag", tagged.Original())
+				return tagged
+			}
+		}
+
+		c.logger.Warn("could not normalize firedancer running version to tag version - no cached tag matched by feature-set or major.minor",
+			"running", v.Original(), "featureSet", featureSet)
+		return v
 	}
 
-	c.logger.Warn("could not normalize firedancer running version to tag version - no cached tag matched by feature-set or major.minor",
-		"running", v.Original(), "featureSet", featureSet)
 	return v
 }
 
