@@ -136,7 +136,7 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 		sortedVersions := c.sortedVersionsFromVersionStrings(versionStrings)
 		latestClusterVersion[cluster] = sortedVersions[len(sortedVersions)-1]
 		c.cachedTagVersions = append(c.cachedTagVersions, sortedVersions...)
-		c.logger.Debug("latest version "+latestClusterVersion[cluster].Core().String(), "client", c.clientName, "cluster", cluster, "repoURL", c.repoURL+"/releases")
+		c.logger.Debug("latest version "+latestClusterVersion[cluster].Original(), "client", c.clientName, "cluster", cluster, "repoURL", c.repoURL+"/releases")
 	}
 
 	// If cluster is testnet and mainnet version is higher, use mainnet version and warn
@@ -144,12 +144,12 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 	if c.cluster == constants.ClusterNameTestnet && latestClusterVersion[constants.ClusterNameMainnetBeta].GreaterThan(latestVersion) {
 		latestVersion = latestClusterVersion[constants.ClusterNameMainnetBeta]
 		c.logger.Warn(fmt.Sprintf("mainnet v%s > v%s testnet - preferring mainnet version",
-			latestClusterVersion[constants.ClusterNameMainnetBeta].Core().String(),
-			latestClusterVersion[c.cluster].Core().String()),
+			latestClusterVersion[constants.ClusterNameMainnetBeta].Original(),
+			latestClusterVersion[c.cluster].Original()),
 			"client", c.clientName, "cluster", c.cluster, "repoURL", c.repoURL+"/releases")
 	}
 
-	c.logger.Info("latest version "+latestVersion.Core().String(), "client", c.clientName, "cluster", c.cluster, "repoURL", c.repoURL+"/releases")
+	c.logger.Info("latest version "+latestVersion.Original(), "client", c.clientName, "cluster", c.cluster, "repoURL", c.repoURL+"/releases")
 
 	return latestVersion, nil
 }
