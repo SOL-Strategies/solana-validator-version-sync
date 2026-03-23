@@ -19,6 +19,8 @@ var runCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		var err error
 
+		log.Info("starting solana-validator-version-sync", "version", version)
+
 		m, err := manager.NewFromConfig(loadedConfig)
 		if err != nil {
 			log.Fatal("failed to create sync manager", "error", err)
