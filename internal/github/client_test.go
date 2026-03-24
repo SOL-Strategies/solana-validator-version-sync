@@ -250,15 +250,35 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 		want     []string
 	}{
 		{
-			name: "matching releases",
+			name: "matching releases with old mainnet beta phrase",
 			releases: []*github.RepositoryRelease{
 				{Body: github.String("This is a stable release suitable for use on Mainnet Beta"), TagName: github.String("v1.18.0")},
 				{Body: github.String("This is a Testnet release"), TagName: github.String("v1.17.0")},
 				{Body: github.String("This is a stable release suitable for use on Mainnet Beta"), TagName: github.String("v1.19.0")},
 				{Body: github.String("Some other release notes"), TagName: github.String("v1.20.0")},
 			},
-			regex: ".*This is a stable release suitable for use on Mainnet Beta.*",
+			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This is a stable Mainnet release).*",
 			want:  []string{"v1.18.0", "v1.19.0"},
+		},
+		{
+			name: "matching releases with new stable mainnet phrase",
+			releases: []*github.RepositoryRelease{
+				{Body: github.String("This is a stable Mainnet release"), TagName: github.String("v3.1.11")},
+				{Body: github.String("This is a Testnet release"), TagName: github.String("v3.1.10-testnet")},
+				{Body: github.String("Some other release notes"), TagName: github.String("v3.1.10")},
+			},
+			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This is a stable Mainnet release).*",
+			want:  []string{"v3.1.11"},
+		},
+		{
+			name: "matching releases with both mainnet phrases mixed",
+			releases: []*github.RepositoryRelease{
+				{Body: github.String("This is a stable release suitable for use on Mainnet Beta"), TagName: github.String("v3.1.10")},
+				{Body: github.String("This is a stable Mainnet release"), TagName: github.String("v3.1.11")},
+				{Body: github.String("This is a Testnet release"), TagName: github.String("v3.1.12-testnet")},
+			},
+			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This is a stable Mainnet release).*",
+			want:  []string{"v3.1.10", "v3.1.11"},
 		},
 		{
 			name: "no matching releases",
@@ -266,13 +286,13 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 				{Body: github.String("This is a Testnet release"), TagName: github.String("v1.17.0")},
 				{Body: github.String("Some other release notes"), TagName: github.String("v1.20.0")},
 			},
-			regex: ".*This is a stable release suitable for use on Mainnet Beta.*",
+			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This is a stable Mainnet release).*",
 			want:  []string{},
 		},
 		{
 			name:     "empty releases",
 			releases: []*github.RepositoryRelease{},
-			regex:    ".*This is a stable release suitable for use on Mainnet Beta.*",
+			regex:    ".*(This is a stable release suitable for use on Mainnet Beta|This is a stable Mainnet release).*",
 			want:     []string{},
 		},
 	}
