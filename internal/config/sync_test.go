@@ -1,8 +1,11 @@
 package config
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/log"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/sync_commands"
 )
 
@@ -68,6 +71,70 @@ func TestSync_Validate(t *testing.T) {
 				t.Errorf("Sync.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestSync_Validate_WarnsWhenEnvironmentConfiguredWithoutInheritance(t *testing.T) {
+	var output bytes.Buffer
+
+	originalLogger := syncValidationLogger
+	syncValidationLogger = log.New(&output).WithPrefix("config")
+	t.Cleanup(func() {
+		syncValidationLogger = originalLogger
+	})
+
+	sync := Sync{
+		Commands: []sync_commands.Command{
+			{
+				Name: "build",
+				Environment: map[string]string{
+					"TO_VERSION": "1.2.3",
+				},
+				InheritEnvironment: false,
+			},
+		},
+	}
+
+	if err := sync.Validate(); err != nil {
+		t.Fatalf("Sync.Validate() error = %v, want nil", err)
+	}
+
+	logged := output.String()
+	if !strings.Contains(logged, "inherit_environment=false") {
+		t.Fatalf("Sync.Validate() warning missing inherit_environment context: %q", logged)
+	}
+	if !strings.Contains(logged, "build") {
+		t.Fatalf("Sync.Validate() warning missing command name: %q", logged)
+	}
+}
+
+func TestSync_Validate_DoesNotWarnWhenEnvironmentInheritanceEnabled(t *testing.T) {
+	var output bytes.Buffer
+
+	originalLogger := syncValidationLogger
+	syncValidationLogger = log.New(&output).WithPrefix("config")
+	t.Cleanup(func() {
+		syncValidationLogger = originalLogger
+	})
+
+	sync := Sync{
+		Commands: []sync_commands.Command{
+			{
+				Name: "build",
+				Environment: map[string]string{
+					"TO_VERSION": "1.2.3",
+				},
+				InheritEnvironment: true,
+			},
+		},
+	}
+
+	if err := sync.Validate(); err != nil {
+		t.Fatalf("Sync.Validate() error = %v, want nil", err)
+	}
+
+	if logged := output.String(); logged != "" {
+		t.Fatalf("Sync.Validate() logged warning unexpectedly: %q", logged)
 	}
 }
 

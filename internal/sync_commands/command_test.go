@@ -2,19 +2,21 @@ package sync_commands
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestExecOptions_StructFields(t *testing.T) {
 	opts := ExecOptions{
-		CommandIndex: 1,
-		Disabled:     false,
-		AllowFailure: true,
-		Cmd:          "echo",
-		Args:         []string{"hello", "world"},
-		Environment:  map[string]string{"TEST": "value"},
-		StreamOutput: true,
+		CommandIndex:       1,
+		Disabled:           false,
+		AllowFailure:       true,
+		Cmd:                "echo",
+		Args:               []string{"hello", "world"},
+		Environment:        map[string]string{"TEST": "value"},
+		InheritEnvironment: true,
+		StreamOutput:       true,
 	}
 
 	if opts.CommandIndex != 1 {
@@ -41,6 +43,9 @@ func TestExecOptions_StructFields(t *testing.T) {
 	if opts.Environment["TEST"] != "value" {
 		t.Errorf("Expected Environment TEST to be value, got %s", opts.Environment["TEST"])
 	}
+	if opts.InheritEnvironment != true {
+		t.Errorf("Expected InheritEnvironment to be true, got %v", opts.InheritEnvironment)
+	}
 	if opts.StreamOutput != true {
 		t.Errorf("Expected StreamOutput to be true, got %v", opts.StreamOutput)
 	}
@@ -48,13 +53,14 @@ func TestExecOptions_StructFields(t *testing.T) {
 
 func TestCommand_StructFields(t *testing.T) {
 	cmd := Command{
-		Name:         "test-command",
-		Disabled:     false,
-		AllowFailure: true,
-		Cmd:          "echo",
-		Args:         []string{"{{.VersionTo}}"},
-		Environment:  map[string]string{"CLUSTER": "{{.ClusterName}}"},
-		StreamOutput: true,
+		Name:               "test-command",
+		Disabled:           false,
+		AllowFailure:       true,
+		Cmd:                "echo",
+		Args:               []string{"{{.VersionTo}}"},
+		Environment:        map[string]string{"CLUSTER": "{{.ClusterName}}"},
+		InheritEnvironment: true,
+		StreamOutput:       true,
 	}
 
 	if cmd.Name != "test-command" {
@@ -77,6 +83,9 @@ func TestCommand_StructFields(t *testing.T) {
 	}
 	if cmd.Environment["CLUSTER"] != "{{.ClusterName}}" {
 		t.Errorf("Expected Environment CLUSTER to be {{.ClusterName}}, got %s", cmd.Environment["CLUSTER"])
+	}
+	if cmd.InheritEnvironment != true {
+		t.Errorf("Expected InheritEnvironment to be true, got %v", cmd.InheritEnvironment)
 	}
 	if cmd.StreamOutput != true {
 		t.Errorf("Expected StreamOutput to be true, got %v", cmd.StreamOutput)
@@ -383,29 +392,51 @@ func TestCommand_ExecuteWithData_StreamOutput(t *testing.T) {
 }
 
 func TestExecOptions_EnvironmentSlice(t *testing.T) {
+	testsEnvMap := func(t *testing.T, env []string) map[string]string {
+		t.Helper()
+
+		result := make(map[string]string, len(env))
+		for _, envVar := range env {
+			k, v, ok := strings.Cut(envVar, "=")
+			if !ok {
+				t.Fatalf("EnvironmentSlice() returned invalid env var: %q", envVar)
+			}
+			if _, exists := result[k]; exists {
+				t.Fatalf("EnvironmentSlice() returned duplicate key: %q", k)
+			}
+			result[k] = v
+		}
+
+		return result
+	}
+
 	tests := []struct {
 		name     string
 		opts     ExecOptions
-		expected []string
+		setup    func(t *testing.T)
+		expected map[string]string
+		exact    bool
 	}{
 		{
-			name: "empty environment",
+			name: "empty environment without inheritance",
 			opts: ExecOptions{
 				Environment: map[string]string{},
 			},
-			expected: []string{},
+			expected: map[string]string{},
+			exact:    true,
 		},
 		{
-			name: "single environment variable",
+			name: "single environment variable without inheritance",
 			opts: ExecOptions{
 				Environment: map[string]string{
 					"TEST": "value",
 				},
 			},
-			expected: []string{"TEST=value"},
+			expected: map[string]string{"TEST": "value"},
+			exact:    true,
 		},
 		{
-			name: "multiple environment variables",
+			name: "multiple environment variables without inheritance",
 			opts: ExecOptions{
 				Environment: map[string]string{
 					"CLUSTER": "mainnet-beta",
@@ -413,39 +444,93 @@ func TestExecOptions_EnvironmentSlice(t *testing.T) {
 					"ROLE":    "active",
 				},
 			},
-			expected: []string{"CLUSTER=mainnet-beta", "VERSION=1.18.0", "ROLE=active"},
+			expected: map[string]string{
+				"CLUSTER": "mainnet-beta",
+				"VERSION": "1.18.0",
+				"ROLE":    "active",
+			},
+			exact: true,
 		},
 		{
-			name: "environment variables with spaces",
+			name: "environment variables with spaces without inheritance",
 			opts: ExecOptions{
 				Environment: map[string]string{
 					"KEY1": " value1 ",
 					"KEY2": "value2",
 				},
 			},
-			expected: []string{"KEY1=value1", "KEY2=value2"},
+			expected: map[string]string{
+				"KEY1": "value1",
+				"KEY2": "value2",
+			},
+			exact: true,
+		},
+		{
+			name: "inherits parent environment when enabled",
+			opts: ExecOptions{
+				Environment:        map[string]string{},
+				InheritEnvironment: true,
+			},
+			setup: func(t *testing.T) {
+				t.Setenv("SVVS_TEST_INHERITED", "parent")
+			},
+			expected: map[string]string{
+				"SVVS_TEST_INHERITED": "parent",
+			},
+		},
+		{
+			name: "adds explicit environment on top of inherited values",
+			opts: ExecOptions{
+				Environment: map[string]string{
+					"SVVS_TEST_ADDED": "child",
+				},
+				InheritEnvironment: true,
+			},
+			setup: func(t *testing.T) {
+				t.Setenv("SVVS_TEST_BASE", "parent")
+			},
+			expected: map[string]string{
+				"SVVS_TEST_BASE":  "parent",
+				"SVVS_TEST_ADDED": "child",
+			},
+		},
+		{
+			name: "explicit environment overrides inherited values",
+			opts: ExecOptions{
+				Environment: map[string]string{
+					"SVVS_TEST_OVERRIDE": " child ",
+				},
+				InheritEnvironment: true,
+			},
+			setup: func(t *testing.T) {
+				t.Setenv("SVVS_TEST_OVERRIDE", "parent")
+			},
+			expected: map[string]string{
+				"SVVS_TEST_OVERRIDE": "child",
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := tt.opts.EnvironmentSlice()
+			if tt.setup != nil {
+				tt.setup(t)
+			}
 
-			if len(result) != len(tt.expected) {
+			result := testsEnvMap(t, tt.opts.EnvironmentSlice())
+
+			if tt.exact && len(result) != len(tt.expected) {
 				t.Errorf("EnvironmentSlice() length = %d, want %d", len(result), len(tt.expected))
 			}
 
-			// Check that all expected values are present (order may vary due to map iteration)
-			for _, expected := range tt.expected {
-				found := false
-				for _, actual := range result {
-					if actual == expected {
-						found = true
-						break
-					}
-				}
+			for expectedKey, expectedValue := range tt.expected {
+				actualValue, found := result[expectedKey]
 				if !found {
-					t.Errorf("EnvironmentSlice() missing expected value: %s", expected)
+					t.Errorf("EnvironmentSlice() missing expected key: %s", expectedKey)
+					continue
+				}
+				if actualValue != expectedValue {
+					t.Errorf("EnvironmentSlice() value for %s = %q, want %q", expectedKey, actualValue, expectedValue)
 				}
 			}
 		})
