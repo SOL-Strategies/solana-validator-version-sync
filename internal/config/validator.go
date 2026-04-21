@@ -10,7 +10,8 @@ import (
 
 // Validator represents the validator configuration
 type Validator struct {
-	// Client is the solana validator client - one of: agave, jito-solana, rakurai, firedancer
+	// Client is the solana validator client - one of: agave, jito-solana, rakurai-validator, firedancer
+	// The legacy alias "rakurai" is also accepted and normalized to "rakurai-validator".
 	Client string `koanf:"client"`
 	// RPCURL is the URL of the validator's RPC endpoint
 	RPCURL string `koanf:"rpc_url"`
@@ -53,10 +54,12 @@ func (i *Identities) Load() (err error) {
 // Validate validates the validator configuration
 func (v *Validator) Validate() error {
 	// Validate client
-	err := constants.ValidateClientName(v.Client)
+	normalizedClient := constants.NormalizeClientName(v.Client)
+	err := constants.ValidateClientName(normalizedClient)
 	if err != nil {
 		return err
 	}
+	v.Client = normalizedClient
 
 	// Validate RPC URL
 	_, err = url.Parse(v.RPCURL)

@@ -30,8 +30,9 @@ type Requirements struct {
 func (r *Requirements) SetClient(client string) (err error) {
 	var minVersion string
 	var maxVersion string
+	normalizedClient := constants.NormalizeClientName(client)
 
-	switch client {
+	switch normalizedClient {
 	case constants.ClientNameAgave, constants.ClientNameJitoSolana, constants.ClientNameRakurai:
 		r.Client = constants.ClientNameAgave
 		minVersion = r.AgaveMinVersion
