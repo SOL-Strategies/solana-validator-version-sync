@@ -71,6 +71,9 @@ func New(opts Options) (v *Validator, err error) {
 		Cluster: opts.Cluster,
 		Client:  v.cfg.Client,
 	})
+	if err != nil {
+		return nil, err
+	}
 	v.sfdpClient = sfdp.NewClient(sfdp.Options{
 		Cluster: opts.Cluster,
 		Client:  v.cfg.Client,
