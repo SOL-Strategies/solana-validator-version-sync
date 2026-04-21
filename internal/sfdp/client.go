@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/sol-strategies/solana-validator-version-sync/internal/constants"
 )
 
 // Client represents an SFDP API client
@@ -30,7 +31,7 @@ func NewClient(opts Options) *Client {
 	return &Client{
 		baseURL:    "https://api.solana.org/api",
 		cluster:    opts.Cluster,
-		clientName: opts.Client,
+		clientName: constants.NormalizeClientName(opts.Client),
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},

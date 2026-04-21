@@ -11,9 +11,10 @@ import (
 
 func TestNewClient(t *testing.T) {
 	tests := []struct {
-		name    string
-		opts    Options
-		wantErr bool
+		name           string
+		opts           Options
+		expectedClient string
+		wantErr        bool
 	}{
 		{
 			name: "valid agave client for mainnet-beta",
@@ -21,7 +22,8 @@ func TestNewClient(t *testing.T) {
 				Cluster: constants.ClusterNameMainnetBeta,
 				Client:  constants.ClientNameAgave,
 			},
-			wantErr: false,
+			expectedClient: constants.ClientNameAgave,
+			wantErr:        false,
 		},
 		{
 			name: "valid agave client for testnet",
@@ -29,7 +31,8 @@ func TestNewClient(t *testing.T) {
 				Cluster: constants.ClusterNameTestnet,
 				Client:  constants.ClientNameAgave,
 			},
-			wantErr: false,
+			expectedClient: constants.ClientNameAgave,
+			wantErr:        false,
 		},
 		{
 			name: "valid jito-solana client for mainnet-beta",
@@ -37,15 +40,26 @@ func TestNewClient(t *testing.T) {
 				Cluster: constants.ClusterNameMainnetBeta,
 				Client:  constants.ClientNameJitoSolana,
 			},
-			wantErr: false,
+			expectedClient: constants.ClientNameJitoSolana,
+			wantErr:        false,
 		},
 		{
-			name: "valid rakurai client for mainnet-beta",
+			name: "valid rakurai-validator client for mainnet-beta",
 			opts: Options{
 				Cluster: constants.ClusterNameMainnetBeta,
 				Client:  constants.ClientNameRakurai,
 			},
-			wantErr: false,
+			expectedClient: constants.ClientNameRakurai,
+			wantErr:        false,
+		},
+		{
+			name: "legacy rakurai alias is normalized",
+			opts: Options{
+				Cluster: constants.ClusterNameMainnetBeta,
+				Client:  "rakurai",
+			},
+			expectedClient: constants.ClientNameRakurai,
+			wantErr:        false,
 		},
 		{
 			name: "valid firedancer client for mainnet-beta",
@@ -53,7 +67,8 @@ func TestNewClient(t *testing.T) {
 				Cluster: constants.ClusterNameMainnetBeta,
 				Client:  constants.ClientNameFiredancer,
 			},
-			wantErr: false,
+			expectedClient: constants.ClientNameFiredancer,
+			wantErr:        false,
 		},
 		{
 			name: "invalid client name",
@@ -69,7 +84,8 @@ func TestNewClient(t *testing.T) {
 				Cluster: "invalid-cluster",
 				Client:  constants.ClientNameAgave,
 			},
-			wantErr: false,
+			expectedClient: constants.ClientNameAgave,
+			wantErr:        false,
 		},
 	}
 
@@ -88,8 +104,8 @@ func TestNewClient(t *testing.T) {
 					if client.cluster != tt.opts.Cluster {
 						t.Errorf("NewClient() cluster = %v, want %v", client.cluster, tt.opts.Cluster)
 					}
-					if client.clientName != tt.opts.Client {
-						t.Errorf("NewClient() clientName = %v, want %v", client.clientName, tt.opts.Client)
+					if client.clientName != tt.expectedClient {
+						t.Errorf("NewClient() clientName = %v, want %v", client.clientName, tt.expectedClient)
 					}
 					if client.client == nil {
 						t.Error("NewClient() should initialize GitHub client")

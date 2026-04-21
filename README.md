@@ -12,7 +12,7 @@ A simple version synchronization manager for Solana validators, including [SFDP]
 - 👮 **SFDP Compliance**: Checks version requirements against SFDP (Solana Foundation Delegation Program) bounds.
 - ♻️ **Sync Commands**: Executes configurable commands when a version sync for the given validator client is required.
 - ⌚ **Single-shot or recurring**: Run once or on a specified interval
-- ✅ **Multiple Clients**: Supports [agave](https://github.com/anza-xyz/agave), [jito-solana](https://github.com/jito-foundation/jito-solana/), [rakurai](https://github.com/rakurai-io/rakurai-validator) and [firedancer](https://github.com/firedancer-io/firedancer) validator client release monitoring.
+- ✅ **Multiple Clients**: Supports [agave](https://github.com/anza-xyz/agave), [jito-solana](https://github.com/jito-foundation/jito-solana/), [rakurai-validator](https://github.com/rakurai-io/rakurai-validator) and [firedancer](https://github.com/firedancer-io/firedancer) validator client release monitoring.
 
 ## Installation
 
@@ -53,7 +53,7 @@ log:
   format: text # optional, default: text, one of text|logfmt|json
 
 validator:
-  client: agave                          # required, one of agave|jito-solana|rakurai|firedancer
+  client: agave                          # required, one of agave|jito-solana|rakurai-validator|firedancer (legacy alias: rakurai)
   version_constraint: ">= 2.3.6, < 3.0.0" # required, a valid go-version semver constraint string - ref https://github.com/hashicorp/go-version
   rpc_url: http://127.0.0.1:8899         # optional, default: http:127.0.0.1:8899 - local validator rpc URL
   identities:

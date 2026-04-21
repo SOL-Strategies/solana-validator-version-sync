@@ -164,6 +164,31 @@ func TestConfig_Initialize(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "legacy rakurai alias is normalized during initialize",
+			config: &Config{
+				Log: Log{
+					Level:  "info",
+					Format: "text",
+				},
+				Validator: Validator{
+					Client: "rakurai",
+					RPCURL: "http://localhost:8899",
+					Identities: Identities{
+						ActiveKeyPairFile:  activeKeyFile,
+						PassiveKeyPairFile: passiveKeyFile,
+					},
+				},
+				Cluster: Cluster{
+					Name: constants.ClusterNameMainnetBeta,
+				},
+				Sync: Sync{
+					EnabledWhenActive:    true,
+					EnableSFDPCompliance: false,
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "invalid log configuration",
 			config: &Config{
 				Log: Log{
@@ -258,6 +283,9 @@ func TestConfig_Initialize(t *testing.T) {
 			err := tt.config.Initialize()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Config.Initialize() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && tt.config.Validator.Client == "rakurai" {
+				t.Errorf("Config.Initialize() should normalize legacy client alias, got %s", tt.config.Validator.Client)
 			}
 		})
 	}

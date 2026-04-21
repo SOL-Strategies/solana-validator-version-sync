@@ -44,9 +44,18 @@ func TestValidator_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid rakurai validator",
+			name: "valid rakurai-validator validator",
 			validator: Validator{
 				Client:            constants.ClientNameRakurai,
+				RPCURL:            "http://127.0.0.1:8899",
+				VersionConstraint: ">= 1.18.0",
+			},
+			wantErr: false,
+		},
+		{
+			name: "legacy rakurai alias is normalized",
+			validator: Validator{
+				Client:            "rakurai",
 				RPCURL:            "http://127.0.0.1:8899",
 				VersionConstraint: ">= 1.18.0",
 			},
@@ -83,6 +92,9 @@ func TestValidator_Validate(t *testing.T) {
 			err := tt.validator.Validate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validator.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && tt.validator.Client == "rakurai" {
+				t.Errorf("Validator.Validate() should normalize legacy client alias, got %s", tt.validator.Client)
 			}
 		})
 	}

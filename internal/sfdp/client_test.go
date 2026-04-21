@@ -13,7 +13,7 @@ import (
 func TestNewClient(t *testing.T) {
 	opts := Options{
 		Cluster: "mainnet-beta",
-		Client:  constants.ClientNameAgave,
+		Client:  "rakurai",
 	}
 	client := NewClient(opts)
 
@@ -26,8 +26,8 @@ func TestNewClient(t *testing.T) {
 	if client.cluster != "mainnet-beta" {
 		t.Errorf("NewClient() cluster = %v, want %v", client.cluster, "mainnet-beta")
 	}
-	if client.clientName != constants.ClientNameAgave {
-		t.Errorf("NewClient() clientName = %v, want %v", client.clientName, constants.ClientNameAgave)
+	if client.clientName != constants.ClientNameRakurai {
+		t.Errorf("NewClient() clientName = %v, want %v", client.clientName, constants.ClientNameRakurai)
 	}
 	if client.client == nil {
 		t.Error("NewClient() should initialize HTTP client")

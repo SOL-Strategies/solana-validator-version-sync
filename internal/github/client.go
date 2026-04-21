@@ -67,15 +67,17 @@ type Options struct {
 
 // NewClient creates a new GitHub client
 func NewClient(opts Options) (c *Client, err error) {
+	normalizedClient := constants.NormalizeClientName(opts.Client)
+
 	// Get client repo config
-	repoConfig, ok := clientRepoConfigs[opts.Client]
+	repoConfig, ok := clientRepoConfigs[normalizedClient]
 	if !ok {
 		return nil, fmt.Errorf("client repo config not found for client: %s", opts.Client)
 	}
 
 	c = &Client{
 		cluster:    opts.Cluster,
-		clientName: opts.Client,
+		clientName: normalizedClient,
 		repoURL:    repoConfig.URL,
 		client:     github.NewClient(nil), // No auth token for public repos
 		logger:     log.WithPrefix("github"),
