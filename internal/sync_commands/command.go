@@ -133,8 +133,7 @@ func (c *Command) ExecuteWithData(data CommandTemplateData) (err error) {
 	c.cmdTemplate.Execute(&cmdBuf, data)
 	compiledCmd = cmdBuf.String()
 
-	// compiled args
-	compiledArgs = make([]string, len(c.argsTemplates))
+	compiledArgs = make([]string, 0, len(c.argsTemplates))
 	for _, argTemplate := range c.argsTemplates {
 		argBuf := bytes.Buffer{}
 		argTemplate.Execute(&argBuf, data)
@@ -167,7 +166,6 @@ func (c *Command) ExecuteWithData(data CommandTemplateData) (err error) {
 }
 
 func (c *Command) exec(opts ExecOptions) error {
-	// doing something wrong here, but can't see it so make sure args exclude blank args
 	sanitizedArgs := []string{}
 	opts.ExecLogger.Debug("sanitizing args", "args", opts.Args)
 	for _, arg := range opts.Args {
@@ -283,7 +281,7 @@ func (c *Command) exec(opts ExecOptions) error {
 
 // EnvironmentSlice returns the environment variables as a slice of strings
 func (o *ExecOptions) EnvironmentSlice() []string {
-	env := make([]string, len(o.Environment))
+	env := make([]string, 0, len(o.Environment))
 	for k, v := range o.Environment {
 		env = append(env, fmt.Sprintf("%s=%s", strings.TrimSpace(k), strings.TrimSpace(v)))
 	}
