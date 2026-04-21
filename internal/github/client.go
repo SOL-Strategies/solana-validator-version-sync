@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -26,6 +27,10 @@ var (
 	// jitoVersionSuffixRegex matches the -jito[.N] suffix in jito-solana git tags
 	// (e.g. v4.0.0-beta.2-jito, v3.1.10-jito.1). The RPC does not include this suffix.
 	jitoVersionSuffixRegex = regexp.MustCompile(`-jito(\.\d+)?$`)
+
+	// ErrNoMatchingTaggedVersion indicates the client repo does not currently have an
+	// eligible tag for the configured cluster. Callers may treat this as a soft skip.
+	ErrNoMatchingTaggedVersion = errors.New("no matching tagged version available")
 )
 
 // Client represents a GitHub API client
@@ -34,15 +39,24 @@ type Client struct {
 	releaseNotesRegexes map[string]*regexp.Regexp
 	// map of cluster to release title regex
 	releaseTitleRegexes map[string]*regexp.Regexp
-	repoURL             string
-	repoOwner           string
-	repoName            string
-	clientName          string
-	client              *github.Client
-	cluster             string
-	logger              *log.Logger
+	// map of cluster to git tag regex
+	tagRegexes map[string]*regexp.Regexp
+	repoURL    string
+	repoOwner  string
+	repoName   string
+	clientName string
+	client     *github.Client
+	cluster    string
+	logger     *log.Logger
 	// cachedTagVersions holds all parsed tag versions from the last GetLatestClientVersion call
 	cachedTagVersions []*version.Version
+	cachedTagInfos    []tagVersionInfo
+}
+
+type tagVersionInfo struct {
+	TagName     string
+	Version     *version.Version
+	TestnetOnly bool
 }
 
 // Options represents the options for creating a new GitHub client
@@ -76,6 +90,7 @@ func NewClient(opts Options) (c *Client, err error) {
 	// initialize release notes and title regexes
 	c.releaseNotesRegexes = make(map[string]*regexp.Regexp)
 	c.releaseTitleRegexes = make(map[string]*regexp.Regexp)
+	c.tagRegexes = make(map[string]*regexp.Regexp)
 
 	// compile release notes and title regexes for each cluster
 	for _, cluster := range constants.ValidClusterNames {
@@ -89,6 +104,11 @@ func NewClient(opts Options) (c *Client, err error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to compile release title regex: %w", err)
 		}
+		// compile tag regexes
+		c.tagRegexes[cluster], err = regexp.Compile(repoConfig.TagRegexes[cluster])
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile tag regex: %w", err)
+		}
 	}
 	return c, nil
 }
@@ -98,45 +118,93 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Get releases from GitHub API using go-github
-	releases, _, err := c.client.Repositories.ListReleases(ctx, c.repoOwner, c.repoName, &github.ListOptions{
-		PerPage: 20, // We just need the last few releases
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get releases: %w", err)
-	}
-
-	// map of cluster to version strings
-	versionStrings := make(map[string][]string)
-
 	switch c.clientName {
 	case constants.ClientNameAgave:
+		// Get releases from GitHub API using go-github
+		releases, _, err := c.client.Repositories.ListReleases(ctx, c.repoOwner, c.repoName, &github.ListOptions{
+			PerPage: 20, // We just need the last few releases
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get releases: %w", err)
+		}
+		// map of cluster to version strings
+		versionStrings := make(map[string][]string)
 		// agave flag release cluster in release notes
 		for _, cluster := range constants.ValidClusterNames {
 			versionStrings[cluster] = versionsFromReleaseBodyRegex(releases, c.releaseNotesRegexes[cluster])
 		}
+		return c.latestVersionFromClusterVersionStrings(versionStrings)
 	case constants.ClientNameJitoSolana, constants.ClientNameFiredancer:
+		releases, _, err := c.client.Repositories.ListReleases(ctx, c.repoOwner, c.repoName, &github.ListOptions{
+			PerPage: 20, // We just need the last few releases
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get releases: %w", err)
+		}
+		versionStrings := make(map[string][]string)
 		// jito-solana and firedancer flags release cluster in release title prefix
 		for _, cluster := range constants.ValidClusterNames {
 			versionStrings[cluster] = versionsFromReleaseTitleRegex(releases, c.releaseTitleRegexes[cluster])
 		}
+		return c.latestVersionFromClusterVersionStrings(versionStrings)
+	case constants.ClientNameRakurai:
+		return c.getLatestRakuraiVersion(ctx)
+	default:
+		return nil, fmt.Errorf("unsupported client: %s", c.clientName)
+	}
+}
+
+func (c *Client) getLatestRakuraiVersion(ctx context.Context) (latestVersion *version.Version, err error) {
+	rakuraiTags, _, err := c.client.Repositories.ListTags(ctx, c.repoOwner, c.repoName, &github.ListOptions{
+		PerPage: 100,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get rakurai tags: %w", err)
 	}
 
-	// fail if no releases found for client configured cluster
+	mainnetTagInfos := tagVersionInfosFromTagRegex(rakuraiTags, c.tagRegexes[constants.ClusterNameMainnetBeta], false)
+	testnetTagInfos := tagVersionInfosFromTagRegex(rakuraiTags, c.tagRegexes[constants.ClusterNameTestnet], true)
+
+	c.setCachedTagInfos(append(mainnetTagInfos, testnetTagInfos...))
+
+	selectedTag, err := c.selectRakuraiTagVersionInfo(mainnetTagInfos, testnetTagInfos)
+	if err != nil {
+		return nil, err
+	}
+
+	c.logger.Info("latest version "+selectedTag.Version.Original(),
+		"client", c.clientName,
+		"cluster", c.cluster,
+		"selectedTag", selectedTag.TagName,
+		"repoURL", c.repoURL+"/tags",
+	)
+
+	return selectedTag.Version, nil
+}
+
+func (c *Client) latestVersionFromClusterVersionStrings(versionStrings map[string][]string) (latestVersion *version.Version, err error) {
+	// fail if no releases/tags found for client configured cluster
 	for cluster, versionStrings := range versionStrings {
 		if len(versionStrings) == 0 {
-			return nil, fmt.Errorf("no %s releases found matching regex: %s", cluster, c.releaseNotesRegexes[cluster].String())
+			return nil, fmt.Errorf("no %s versions found for client %s", cluster, c.clientName)
 		}
 	}
 
 	// For each cluster, create a versions slice and sort, and get the latest version
 	latestClusterVersion := make(map[string]*version.Version)
 	c.cachedTagVersions = nil
+	c.cachedTagInfos = nil
 	for cluster, versionStrings := range versionStrings {
 		sortedVersions := c.sortedVersionsFromVersionStrings(versionStrings)
 		latestClusterVersion[cluster] = sortedVersions[len(sortedVersions)-1]
 		c.cachedTagVersions = append(c.cachedTagVersions, sortedVersions...)
-		c.logger.Debug("latest version "+latestClusterVersion[cluster].Original(), "client", c.clientName, "cluster", cluster, "repoURL", c.repoURL+"/releases")
+		for _, tagged := range sortedVersions {
+			c.cachedTagInfos = append(c.cachedTagInfos, tagVersionInfo{
+				TagName: tagged.Original(),
+				Version: tagged,
+			})
+		}
+		c.logger.Debug("latest version "+latestClusterVersion[cluster].Original(), "client", c.clientName, "cluster", cluster, "repoURL", c.versionSourceURL())
 	}
 
 	// If cluster is testnet and mainnet version is higher, use mainnet version and warn
@@ -146,12 +214,46 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 		c.logger.Warn(fmt.Sprintf("mainnet v%s > v%s testnet - preferring mainnet version",
 			latestClusterVersion[constants.ClusterNameMainnetBeta].Original(),
 			latestClusterVersion[c.cluster].Original()),
-			"client", c.clientName, "cluster", c.cluster, "repoURL", c.repoURL+"/releases")
+			"client", c.clientName, "cluster", c.cluster, "repoURL", c.versionSourceURL())
 	}
 
-	c.logger.Info("latest version "+latestVersion.Original(), "client", c.clientName, "cluster", c.cluster, "repoURL", c.repoURL+"/releases")
+	c.logger.Info("latest version "+latestVersion.Original(), "client", c.clientName, "cluster", c.cluster, "repoURL", c.versionSourceURL())
 
 	return latestVersion, nil
+}
+
+func (c *Client) selectRakuraiTagVersionInfo(mainnetTagInfos []tagVersionInfo, testnetTagInfos []tagVersionInfo) (selected tagVersionInfo, err error) {
+	latestMainnet, hasMainnet := latestTagVersionInfo(mainnetTagInfos)
+	latestTestnet, hasTestnet := latestTagVersionInfo(testnetTagInfos)
+
+	switch c.cluster {
+	case constants.ClusterNameMainnetBeta:
+		if !hasMainnet {
+			return tagVersionInfo{}, fmt.Errorf("%w for client %s cluster %s", ErrNoMatchingTaggedVersion, c.clientName, c.cluster)
+		}
+		return latestMainnet, nil
+
+	case constants.ClusterNameTestnet:
+		if !hasMainnet && !hasTestnet {
+			return tagVersionInfo{}, fmt.Errorf("%w for client %s cluster %s", ErrNoMatchingTaggedVersion, c.clientName, c.cluster)
+		}
+		if !hasTestnet {
+			return latestMainnet, nil
+		}
+		if !hasMainnet {
+			return latestTestnet, nil
+		}
+		if latestMainnet.Version.GreaterThan(latestTestnet.Version) {
+			c.logger.Warn("mainnet/general Rakurai tag is newer than latest testnet-only tag - preferring the higher shared version",
+				"mainnetTag", latestMainnet.TagName,
+				"testnetTag", latestTestnet.TagName)
+			return latestMainnet, nil
+		}
+		// When equal or greater, prefer the explicit testnet tag.
+		return latestTestnet, nil
+	}
+
+	return tagVersionInfo{}, fmt.Errorf("unsupported cluster: %s", c.cluster)
 }
 
 // HasTaggedVersion checks if a tagged version exists in the client repo
@@ -165,6 +267,20 @@ func (c *Client) HasTaggedVersion(testVersion *version.Version) (hasTaggedVersio
 	})
 	if err != nil {
 		return false, fmt.Errorf("failed to get tags: %w", err)
+	}
+
+	if c.clientName == constants.ClientNameRakurai {
+		tagInfos := append(
+			tagVersionInfosFromTagRegex(tags, c.tagRegexes[constants.ClusterNameMainnetBeta], false),
+			tagVersionInfosFromTagRegex(tags, c.tagRegexes[constants.ClusterNameTestnet], true)...,
+		)
+		for _, tagInfo := range tagInfos {
+			c.logger.Debug("comparing rakurai tag version to test version", "tag", tagInfo.TagName, "tagVersion", tagInfo.Version.Core().String(), "testVersion", testVersion.Core().String())
+			if tagInfo.Version.Core().Compare(testVersion.Core()) == 0 {
+				return true, nil
+			}
+		}
+		return false, nil
 	}
 
 	// check over the returned tags
@@ -187,6 +303,60 @@ func (c *Client) HasTaggedVersion(testVersion *version.Version) (hasTaggedVersio
 
 func (c *Client) GetRepoURL() string {
 	return c.repoURL
+}
+
+func (c *Client) TagNameForVersion(v *version.Version) string {
+	if c.clientName == constants.ClientNameRakurai {
+		matchingTagInfos := make([]tagVersionInfo, 0)
+		for _, tagInfo := range c.cachedTagInfos {
+			if tagInfo.Version.Equal(v) || tagInfo.Version.Core().Compare(v.Core()) == 0 {
+				matchingTagInfos = append(matchingTagInfos, tagInfo)
+			}
+		}
+
+		switch c.cluster {
+		case constants.ClusterNameTestnet:
+			for _, tagInfo := range matchingTagInfos {
+				if tagInfo.TestnetOnly {
+					return tagInfo.TagName
+				}
+			}
+			for _, tagInfo := range matchingTagInfos {
+				if !tagInfo.TestnetOnly {
+					return tagInfo.TagName
+				}
+			}
+		default:
+			for _, tagInfo := range matchingTagInfos {
+				if !tagInfo.TestnetOnly {
+					return tagInfo.TagName
+				}
+			}
+		}
+	}
+
+	for _, tagInfo := range c.cachedTagInfos {
+		if tagInfo.Version.Equal(v) {
+			return tagInfo.TagName
+		}
+	}
+
+	return v.Original()
+}
+
+func (c *Client) versionSourceURL() string {
+	if c.clientName == constants.ClientNameRakurai {
+		return c.repoURL + "/tags"
+	}
+	return c.repoURL + "/releases"
+}
+
+func (c *Client) setCachedTagInfos(tagInfos []tagVersionInfo) {
+	c.cachedTagInfos = tagInfos
+	c.cachedTagVersions = make([]*version.Version, 0, len(tagInfos))
+	for _, tagInfo := range tagInfos {
+		c.cachedTagVersions = append(c.cachedTagVersions, tagInfo.Version)
+	}
 }
 
 // NormalizeToTagVersion translates the running version reported by the validator RPC
@@ -240,6 +410,18 @@ func (c *Client) NormalizeToTagVersion(v *version.Version) *version.Version {
 		// only in formatting (e.g. leading 'v').
 		for _, tagged := range c.cachedTagVersions {
 			if tagged.Equal(v) {
+				return tagged
+			}
+		}
+		// No cached tag found — return unchanged (version already matches or is not yet released)
+		return v
+
+	case constants.ClientNameRakurai:
+		// Rakurai validator release tags carry a release/ prefix and may optionally
+		// include a _testnet suffix in GitHub. Those parts are tracked separately in
+		// cachedTagInfos, so here we normalize by matching the semver payload only.
+		for _, tagged := range c.cachedTagVersions {
+			if tagged.Equal(v) || tagged.Core().Compare(v.Core()) == 0 {
 				return tagged
 			}
 		}
@@ -301,6 +483,15 @@ func versionsFromReleaseTitleRegex(releases []*github.RepositoryRelease, regex *
 	return versionStrings
 }
 
+func versionsFromTagRegex(tags []*github.RepositoryTag, regex *regexp.Regexp) (versionStrings []string) {
+	tagInfos := tagVersionInfosFromTagRegex(tags, regex, false)
+	versionStrings = make([]string, 0, len(tagInfos))
+	for _, tagInfo := range tagInfos {
+		versionStrings = append(versionStrings, tagInfo.Version.Original())
+	}
+	return versionStrings
+}
+
 // versionsFromReleaseBodyRegex gets versions from non-prerelease releases with bodies matching the supplied regex
 func versionsFromReleaseBodyRegex(releases []*github.RepositoryRelease, regex *regexp.Regexp) (versionStrings []string) {
 	for _, release := range releases {
@@ -317,15 +508,63 @@ func versionsFromReleaseBodyRegex(releases []*github.RepositoryRelease, regex *r
 
 // setOwnerAndRepo extracts owner and repo from a GitHub URL
 func (c *Client) setOwnerAndRepo() (err error) {
-	matches := githubRepoAndOwnerFromURLRegex.FindStringSubmatch(c.repoURL)
-	if len(matches) != 3 {
-		return fmt.Errorf("unsupported GitHub URL format: %s", c.repoURL)
+	c.repoOwner, c.repoName, err = ownerAndRepoFromURL(c.repoURL)
+	if err != nil {
+		return err
 	}
 
-	c.repoOwner = matches[1]
-	c.repoName = matches[2]
-
 	return nil
+}
+
+func ownerAndRepoFromURL(repoURL string) (owner string, repo string, err error) {
+	matches := githubRepoAndOwnerFromURLRegex.FindStringSubmatch(repoURL)
+	if len(matches) != 3 {
+		return "", "", fmt.Errorf("unsupported GitHub URL format: %s", repoURL)
+	}
+
+	return matches[1], matches[2], nil
+}
+
+func latestTagVersionInfo(tagInfos []tagVersionInfo) (latest tagVersionInfo, ok bool) {
+	if len(tagInfos) == 0 {
+		return tagVersionInfo{}, false
+	}
+
+	latest = tagInfos[0]
+	for _, candidate := range tagInfos[1:] {
+		if candidate.Version.GreaterThan(latest.Version) {
+			latest = candidate
+		}
+	}
+	return latest, true
+}
+
+func tagVersionInfosFromTagRegex(tags []*github.RepositoryTag, regex *regexp.Regexp, testnetOnly bool) (tagInfos []tagVersionInfo) {
+	for _, tag := range tags {
+		matches := regex.FindStringSubmatch(tag.GetName())
+		if matches == nil {
+			continue
+		}
+
+		versionString := tag.GetName()
+		if len(matches) > 1 {
+			versionString = matches[1]
+		}
+
+		parsedVersion, err := version.NewVersion(versionString)
+		if err != nil {
+			log.Debug("skipping tag with unparsable version", "tag", tag.GetName(), "versionString", versionString, "error", err)
+			continue
+		}
+
+		log.Debug("found matching tag", "tag", tag.GetName(), "version", parsedVersion.Original(), "testnetOnly", testnetOnly)
+		tagInfos = append(tagInfos, tagVersionInfo{
+			TagName:     tag.GetName(),
+			Version:     parsedVersion,
+			TestnetOnly: testnetOnly,
+		})
+	}
+	return tagInfos
 }
 
 func (c *Client) sortedVersionsFromVersionStrings(versionStrings []string) (sortedVersions []*version.Version) {

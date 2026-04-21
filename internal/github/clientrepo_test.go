@@ -38,6 +38,7 @@ func TestClientRepoConfigs_AllClients(t *testing.T) {
 	expectedClients := []string{
 		constants.ClientNameAgave,
 		constants.ClientNameJitoSolana,
+		constants.ClientNameRakurai,
 		constants.ClientNameFiredancer,
 	}
 
@@ -131,6 +132,29 @@ func TestClientRepoConfigs_FiredancerConfig(t *testing.T) {
 	}
 }
 
+func TestClientRepoConfigs_RakuraiConfig(t *testing.T) {
+	config := clientRepoConfigs[constants.ClientNameRakurai]
+
+	expectedURL := "https://github.com/rakurai-io/rakurai-validator"
+	if config.URL != expectedURL {
+		t.Errorf("Rakurai URL = %v, want %v", config.URL, expectedURL)
+	}
+
+	expectedClusters := []string{constants.ClusterNameMainnetBeta, constants.ClusterNameTestnet}
+	for _, cluster := range expectedClusters {
+		if _, exists := config.TagRegexes[cluster]; !exists {
+			t.Errorf("Rakurai TagRegex not found for cluster: %s", cluster)
+		}
+	}
+
+	if config.ReleaseNotesRegexes != nil {
+		t.Errorf("Rakurai should not have ReleaseNotesRegexes, but found: %v", config.ReleaseNotesRegexes)
+	}
+	if config.ReleaseTitleRegexes != nil {
+		t.Errorf("Rakurai should not have ReleaseTitleRegexes, but found: %v", config.ReleaseTitleRegexes)
+	}
+}
+
 func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 	tests := []struct {
 		clientName string
@@ -163,6 +187,18 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			regex:      "^Testnet - v([0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?)-jito(?:\\.[0-9]+)?$",
 		},
 		{
+			clientName: constants.ClientNameRakurai,
+			cluster:    constants.ClusterNameMainnetBeta,
+			regexType:  "TagRegex",
+			regex:      "^release/(v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?-rakurai\\.[0-9]+)$",
+		},
+		{
+			clientName: constants.ClientNameRakurai,
+			cluster:    constants.ClusterNameTestnet,
+			regexType:  "TagRegex",
+			regex:      "^release/(v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?-rakurai\\.[0-9]+)_testnet$",
+		},
+		{
 			clientName: constants.ClientNameFiredancer,
 			cluster:    constants.ClusterNameMainnetBeta,
 			regexType:  "ReleaseTitleRegex",
@@ -185,8 +221,10 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 
 			if tt.regexType == "ReleaseNotesRegex" {
 				actualRegex, exists = config.ReleaseNotesRegexes[tt.cluster]
-			} else {
+			} else if tt.regexType == "ReleaseTitleRegex" {
 				actualRegex, exists = config.ReleaseTitleRegexes[tt.cluster]
+			} else {
+				actualRegex, exists = config.TagRegexes[tt.cluster]
 			}
 
 			if !exists {
@@ -320,6 +358,27 @@ func TestNormalizeToTagVersion(t *testing.T) {
 			input:          "2.2.8",
 			want:           "2.2.8",
 		},
+		{
+			name:           "rakurai: returns matching cached tag for stable version",
+			clientName:     constants.ClientNameRakurai,
+			cachedVersions: []string{"v3.1.8-rakurai.0"},
+			input:          "3.1.8-rakurai.0",
+			want:           "3.1.8-rakurai.0",
+		},
+		{
+			name:           "rakurai: normalizes core version to matching tag version",
+			clientName:     constants.ClientNameRakurai,
+			cachedVersions: []string{"v3.1.8-rakurai.0"},
+			input:          "3.1.8",
+			want:           "3.1.8-rakurai.0",
+		},
+		{
+			name:           "rakurai: returns unchanged when no cached tag matches",
+			clientName:     constants.ClientNameRakurai,
+			cachedVersions: []string{"v3.1.7-rakurai.0"},
+			input:          "3.1.8",
+			want:           "3.1.8",
+		},
 	}
 
 	for _, tt := range tests {
@@ -340,6 +399,214 @@ func TestNormalizeToTagVersion(t *testing.T) {
 				t.Errorf("NormalizeToTagVersion(%q) = %q, want %q", tt.input, got.Core().String(), tt.want)
 			}
 		})
+	}
+}
+
+func TestSelectRakuraiTagVersionInfo(t *testing.T) {
+	mustVersion := func(s string) *goversion.Version {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		return v
+	}
+
+	tests := []struct {
+		name        string
+		cluster     string
+		mainnetTags []tagVersionInfo
+		testnetTags []tagVersionInfo
+		want        string
+		wantTag     string
+		wantErr     bool
+	}{
+		{
+			name:    "mainnet picks highest shared tag",
+			cluster: constants.ClusterNameMainnetBeta,
+			mainnetTags: []tagVersionInfo{
+				{TagName: "release/v3.0.13-rakurai.0", Version: mustVersion("v3.0.13-rakurai.0")},
+				{TagName: "release/v3.1.8-rakurai.0", Version: mustVersion("v3.1.8-rakurai.0")},
+			},
+			testnetTags: []tagVersionInfo{
+				{TagName: "release/v3.1.8-rakurai.0_testnet", Version: mustVersion("v3.1.8-rakurai.0"), TestnetOnly: true},
+			},
+			want:    "3.1.8",
+			wantTag: "release/v3.1.8-rakurai.0",
+		},
+		{
+			name:    "testnet picks higher shared tag over lower testnet-only tag",
+			cluster: constants.ClusterNameTestnet,
+			mainnetTags: []tagVersionInfo{
+				{TagName: "release/v3.1.8-rakurai.0", Version: mustVersion("v3.1.8-rakurai.0")},
+			},
+			testnetTags: []tagVersionInfo{
+				{TagName: "release/v3.1.6-rakurai.0_testnet", Version: mustVersion("v3.1.6-rakurai.0"), TestnetOnly: true},
+			},
+			want:    "3.1.8",
+			wantTag: "release/v3.1.8-rakurai.0",
+		},
+		{
+			name:    "testnet prefers explicit testnet tag when equal version exists",
+			cluster: constants.ClusterNameTestnet,
+			mainnetTags: []tagVersionInfo{
+				{TagName: "release/v3.1.8-rakurai.0", Version: mustVersion("v3.1.8-rakurai.0")},
+			},
+			testnetTags: []tagVersionInfo{
+				{TagName: "release/v3.1.8-rakurai.0_testnet", Version: mustVersion("v3.1.8-rakurai.0"), TestnetOnly: true},
+			},
+			want:    "3.1.8",
+			wantTag: "release/v3.1.8-rakurai.0_testnet",
+		},
+		{
+			name:    "testnet falls back to shared tag when no testnet-only tag exists",
+			cluster: constants.ClusterNameTestnet,
+			mainnetTags: []tagVersionInfo{
+				{TagName: "release/v3.1.8-rakurai.0", Version: mustVersion("v3.1.8-rakurai.0")},
+			},
+			want:    "3.1.8",
+			wantTag: "release/v3.1.8-rakurai.0",
+		},
+		{
+			name:    "mainnet errors when no eligible shared tag exists",
+			cluster: constants.ClusterNameMainnetBeta,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Client{
+				clientName: constants.ClientNameRakurai,
+				cluster:    tt.cluster,
+				logger:     log.WithPrefix("test"),
+			}
+
+			got, err := c.selectRakuraiTagVersionInfo(tt.mainnetTags, tt.testnetTags)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("selectRakuraiTagVersionInfo() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			if got.Version == nil {
+				t.Fatal("selectRakuraiTagVersionInfo() returned nil version")
+			}
+			if got.Version.Core().String() != tt.want {
+				t.Errorf("selectRakuraiTagVersionInfo() version = %q, want %q", got.Version.Core().String(), tt.want)
+			}
+			if got.TagName != tt.wantTag {
+				t.Errorf("selectRakuraiTagVersionInfo() tag = %q, want %q", got.TagName, tt.wantTag)
+			}
+		})
+	}
+}
+
+func TestClientRepoConfigs_RakuraiReleaseTagRegex(t *testing.T) {
+	config := clientRepoConfigs[constants.ClientNameRakurai]
+
+	tests := []struct {
+		name            string
+		cluster         string
+		tagName         string
+		shouldMatch     bool
+		expectedVersion string
+	}{
+		{
+			name:            "mainnet/shared release tag",
+			cluster:         constants.ClusterNameMainnetBeta,
+			tagName:         "release/v3.1.8-rakurai.0",
+			shouldMatch:     true,
+			expectedVersion: "v3.1.8-rakurai.0",
+		},
+		{
+			name:            "testnet-only release tag",
+			cluster:         constants.ClusterNameTestnet,
+			tagName:         "release/v3.1.8-rakurai.0_testnet",
+			shouldMatch:     true,
+			expectedVersion: "v3.1.8-rakurai.0",
+		},
+		{
+			name:        "mainnet ignores testnet-only tag",
+			cluster:     constants.ClusterNameMainnetBeta,
+			tagName:     "release/v3.1.8-rakurai.0_testnet",
+			shouldMatch: false,
+		},
+		{
+			name:        "testnet ignores beta-like .b variant",
+			cluster:     constants.ClusterNameTestnet,
+			tagName:     "release/v3.0.14-rakurai.1.b_testnet",
+			shouldMatch: false,
+		},
+		{
+			name:        "mainnet ignores beta-like .b variant",
+			cluster:     constants.ClusterNameMainnetBeta,
+			tagName:     "release/v3.0.14-rakurai.1.b",
+			shouldMatch: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			regexStr, exists := config.TagRegexes[tt.cluster]
+			if !exists {
+				t.Fatalf("TagRegex not found for cluster: %s", tt.cluster)
+			}
+
+			re := regexp.MustCompile(regexStr)
+			matches := re.FindStringSubmatch(tt.tagName)
+
+			if tt.shouldMatch {
+				if matches == nil {
+					t.Fatalf("Expected regex to match %q, but it didn't", tt.tagName)
+				}
+				if matches[1] != tt.expectedVersion {
+					t.Errorf("Expected version %q, got %q", tt.expectedVersion, matches[1])
+				}
+				return
+			}
+
+			if matches != nil {
+				t.Errorf("Expected regex to NOT match %q, but it did (matched: %v)", tt.tagName, matches)
+			}
+		})
+	}
+}
+
+func TestTagNameForVersion_Rakurai(t *testing.T) {
+	mustVersion := func(s string) *goversion.Version {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		return v
+	}
+
+	testnetClient := &Client{
+		clientName: constants.ClientNameRakurai,
+		cluster:    constants.ClusterNameTestnet,
+		cachedTagInfos: []tagVersionInfo{
+			{TagName: "release/v3.1.8-rakurai.0", Version: mustVersion("v3.1.8-rakurai.0")},
+			{TagName: "release/v3.1.8-rakurai.0_testnet", Version: mustVersion("v3.1.8-rakurai.0"), TestnetOnly: true},
+		},
+	}
+
+	if got := testnetClient.TagNameForVersion(mustVersion("3.1.8")); got != "release/v3.1.8-rakurai.0_testnet" {
+		t.Errorf("TagNameForVersion() testnet = %q, want %q", got, "release/v3.1.8-rakurai.0_testnet")
+	}
+
+	mainnetClient := &Client{
+		clientName: constants.ClientNameRakurai,
+		cluster:    constants.ClusterNameMainnetBeta,
+		cachedTagInfos: []tagVersionInfo{
+			{TagName: "release/v3.1.8-rakurai.0", Version: mustVersion("v3.1.8-rakurai.0")},
+			{TagName: "release/v3.1.8-rakurai.0_testnet", Version: mustVersion("v3.1.8-rakurai.0"), TestnetOnly: true},
+		},
+	}
+
+	if got := mainnetClient.TagNameForVersion(mustVersion("3.1.8")); got != "release/v3.1.8-rakurai.0" {
+		t.Errorf("TagNameForVersion() mainnet = %q, want %q", got, "release/v3.1.8-rakurai.0")
 	}
 }
 

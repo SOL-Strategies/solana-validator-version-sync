@@ -7,6 +7,7 @@ type ClientRepoConfig struct {
 	URL                 string
 	ReleaseNotesRegexes map[string]string
 	ReleaseTitleRegexes map[string]string
+	TagRegexes          map[string]string
 }
 
 var clientRepoConfigs = map[string]ClientRepoConfig{
@@ -22,6 +23,16 @@ var clientRepoConfigs = map[string]ClientRepoConfig{
 		ReleaseTitleRegexes: map[string]string{
 			constants.ClusterNameMainnetBeta: "^Mainnet - v([0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?)-jito(?:\\.[0-9]+)?$",
 			constants.ClusterNameTestnet:     "^Testnet - v([0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?)-jito(?:\\.[0-9]+)?$",
+		},
+	},
+	constants.ClientNameRakurai: {
+		URL: "https://github.com/rakurai-io/rakurai-validator",
+		TagRegexes: map[string]string{
+			// Rakurai publishes release tags from the rakurai-validator repo.
+			// We intentionally ignore ".b" variants for now until Rakurai documents
+			// their semantics more clearly.
+			constants.ClusterNameMainnetBeta: "^release/(v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?-rakurai\\.[0-9]+)$",
+			constants.ClusterNameTestnet:     "^release/(v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?-rakurai\\.[0-9]+)_testnet$",
 		},
 	},
 	constants.ClientNameFiredancer: {

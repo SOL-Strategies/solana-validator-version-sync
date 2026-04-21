@@ -44,6 +44,15 @@ func TestValidator_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid rakurai validator",
+			validator: Validator{
+				Client:            constants.ClientNameRakurai,
+				RPCURL:            "http://127.0.0.1:8899",
+				VersionConstraint: ">= 1.18.0",
+			},
+			wantErr: false,
+		},
+		{
 			name: "invalid client name",
 			validator: Validator{
 				Client: "invalid-client",
