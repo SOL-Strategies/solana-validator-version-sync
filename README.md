@@ -97,12 +97,15 @@ sync:
       allow_failure: false                               # optional, default:false - when true, errors are logged and subsequent commands executed
       stream_output: true                                # optional, default: false - when true, command output streamed
       disabled: false                                    # optional, default: false - when true, command skipped
+      inherit_environment: false                         # optional, default: false - when true, inherit parent env and overlay explicit environment values
       cmd: /home/solana/scripts/build-solana.sh          # required, supports templated string
       args: ["build", "--client={{ .ValidatorClient }}"] # optional, supports templated strings
-      environment:                                       # optional, environment variables to pass to cmd, values support templated strings
+      environment:                                       # optional, values support templated strings; set inherit_environment: true if these should augment the normal process environment
         TO_VERSION: "{{ .VersionTo }}"
     # ...
 ```
+
+If a command defines `environment` while `inherit_environment` remains `false`, the command runs with only the explicit `environment` block and does not inherit the parent process environment. Set `inherit_environment: true` when the command depends on inherited variables such as `PATH`, `HOME`, or service-injected credentials.
 
 ## Development
 

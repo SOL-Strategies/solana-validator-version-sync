@@ -1,8 +1,13 @@
 package config
 
 import (
+	"fmt"
+
+	"github.com/charmbracelet/log"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/sync_commands"
 )
+
+var syncValidationLogger = log.WithPrefix("config")
 
 // Sync represents the version sync configuration
 type Sync struct {
@@ -23,6 +28,23 @@ func (s *Sync) SetDefaults() {
 
 // Validate validates the sync configuration
 func (s *Sync) Validate() error {
-	//This function is kept for any other sync-specific validation that might be needed
+	for i, command := range s.Commands {
+		if len(command.Environment) == 0 || command.InheritEnvironment {
+			continue
+		}
+
+		commandName := command.Name
+		if commandName == "" {
+			commandName = fmt.Sprintf("command[%d]", i)
+		}
+
+		syncValidationLogger.Warn(
+			"sync command defines environment with inherit_environment=false - only the explicit environment block will be passed to the child process",
+			"command", commandName,
+			"command_index", i,
+			"inherit_environment", command.InheritEnvironment,
+		)
+	}
+
 	return nil
 }

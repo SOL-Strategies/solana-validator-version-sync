@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -19,26 +20,28 @@ var (
 )
 
 type ExecOptions struct {
-	ExecLogger    *log.Logger
-	CommandIndex  int
-	CommandsCount int
-	Disabled      bool
-	AllowFailure  bool
-	Cmd           string
-	Args          []string
-	Environment   map[string]string
-	StreamOutput  bool
+	ExecLogger         *log.Logger
+	CommandIndex       int
+	CommandsCount      int
+	Disabled           bool
+	AllowFailure       bool
+	Cmd                string
+	Args               []string
+	Environment        map[string]string
+	InheritEnvironment bool
+	StreamOutput       bool
 }
 
 // Command is a command to run, contains valid templated strings
 type Command struct {
-	Name         string            `koanf:"name"`
-	Disabled     bool              `koanf:"disabled"`
-	AllowFailure bool              `koanf:"allow_failure"`
-	Cmd          string            `koanf:"cmd"`
-	Args         []string          `koanf:"args"`
-	Environment  map[string]string `koanf:"environment"`
-	StreamOutput bool              `koanf:"stream_output"`
+	Name               string            `koanf:"name"`
+	Disabled           bool              `koanf:"disabled"`
+	AllowFailure       bool              `koanf:"allow_failure"`
+	Cmd                string            `koanf:"cmd"`
+	Args               []string          `koanf:"args"`
+	Environment        map[string]string `koanf:"environment"`
+	InheritEnvironment bool              `koanf:"inherit_environment"`
+	StreamOutput       bool              `koanf:"stream_output"`
 
 	logPrefix            string
 	logger               *log.Logger
@@ -105,6 +108,7 @@ func (c *Command) Parse() (err error) {
 			"cmd", c.Cmd,
 			"args", c.Args,
 			"environment", c.Environment,
+			"inherit_environment", c.InheritEnvironment,
 			"disabled", c.Disabled,
 			"allow_failure", c.AllowFailure,
 		)
@@ -154,14 +158,15 @@ func (c *Command) ExecuteWithData(data CommandTemplateData) (err error) {
 	}
 
 	return c.exec(ExecOptions{
-		ExecLogger:    execLogger,
-		CommandIndex:  data.CommandIndex,
-		CommandsCount: data.CommandsCount,
-		AllowFailure:  c.AllowFailure,
-		Cmd:           compiledCmd,
-		Args:          compiledArgs,
-		Environment:   compiledEnvironment,
-		StreamOutput:  c.StreamOutput,
+		ExecLogger:         execLogger,
+		CommandIndex:       data.CommandIndex,
+		CommandsCount:      data.CommandsCount,
+		AllowFailure:       c.AllowFailure,
+		Cmd:                compiledCmd,
+		Args:               compiledArgs,
+		Environment:        compiledEnvironment,
+		InheritEnvironment: c.InheritEnvironment,
+		StreamOutput:       c.StreamOutput,
 	})
 }
 
@@ -281,10 +286,37 @@ func (c *Command) exec(opts ExecOptions) error {
 
 // EnvironmentSlice returns the environment variables as a slice of strings
 func (o *ExecOptions) EnvironmentSlice() []string {
+	if o.InheritEnvironment {
+		return o.inheritedEnvironmentSlice()
+	}
+
 	env := make([]string, 0, len(o.Environment))
 	for k, v := range o.Environment {
 		env = append(env, fmt.Sprintf("%s=%s", strings.TrimSpace(k), strings.TrimSpace(v)))
 	}
+	return env
+}
+
+func (o *ExecOptions) inheritedEnvironmentSlice() []string {
+	merged := make(map[string]string, len(o.Environment))
+
+	for _, envVar := range os.Environ() {
+		k, v, ok := strings.Cut(envVar, "=")
+		if !ok {
+			continue
+		}
+		merged[k] = v
+	}
+
+	for k, v := range o.Environment {
+		merged[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+
+	env := make([]string, 0, len(merged))
+	for k, v := range merged {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+
 	return env
 }
 

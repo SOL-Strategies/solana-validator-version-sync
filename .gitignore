@@ -54,4 +54,6 @@ Thumbs.db
 tmp/
 temp/
 
+# Local agent/editor state
+.codex
 .claude/
