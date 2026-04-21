@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -166,6 +167,10 @@ func (v *Validator) SyncVersion() (err error) {
 	// (must be called before NormalizeToTagVersion to populate the tag version cache)
 	latestClientVersion, err := v.githubClient.GetLatestClientVersion()
 	if err != nil {
+		if errors.Is(err, github.ErrNoMatchingTaggedVersion) {
+			syncLogger.Info("no matching tagged target version available yet - skipping sync", "reason", err.Error())
+			return nil
+		}
 		return err
 	}
 
@@ -202,8 +207,12 @@ func (v *Validator) SyncVersion() (err error) {
 			return fmt.Errorf("SFDP wants v%s and it does not exist as a tagged version in the client repo %s", sfdpCompliantVersion.Original(), v.githubClient.GetRepoURL())
 		}
 
-		syncLogger.Info("setting target version to SFDP compliant version", "sfdp_compliant_version", sfdpCompliantVersion.Original())
-		versionDiff.To = sfdpCompliantVersion
+		normalizedSFDPCompliantVersion := v.githubClient.NormalizeToTagVersion(sfdpCompliantVersion)
+		syncLogger.Info("setting target version to SFDP compliant version",
+			"sfdp_compliant_version", sfdpCompliantVersion.Original(),
+			"sfdp_compliant_tag", v.githubClient.TagNameForVersion(normalizedSFDPCompliantVersion),
+		)
+		versionDiff.To = normalizedSFDPCompliantVersion
 	}
 
 	syncLogger.Debugf("final target sync version: %s", versionDiff.To.Original())
@@ -251,7 +260,7 @@ func (v *Validator) SyncVersion() (err error) {
 			ClusterName:                 v.State.Cluster,
 			VersionFrom:                 versionDiff.From.Core().String(),
 			VersionTo:                   versionDiff.To.Core().String(),
-			VersionToTag:                versionDiff.To.Original(),
+			VersionToTag:                v.githubClient.TagNameForVersion(versionDiff.To),
 			SyncIsSFDPComplianceEnabled: v.syncConfig.EnableSFDPCompliance,
 		})
 		if err != nil {

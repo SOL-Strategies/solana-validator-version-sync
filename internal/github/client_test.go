@@ -40,6 +40,14 @@ func TestNewClient(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid rakurai client for mainnet-beta",
+			opts: Options{
+				Cluster: constants.ClusterNameMainnetBeta,
+				Client:  constants.ClientNameRakurai,
+			},
+			wantErr: false,
+		},
+		{
 			name: "valid firedancer client for mainnet-beta",
 			opts: Options{
 				Cluster: constants.ClusterNameMainnetBeta,
@@ -92,6 +100,71 @@ func TestNewClient(t *testing.T) {
 					if len(client.releaseNotesRegexes) == 0 && len(client.releaseTitleRegexes) == 0 {
 						t.Error("NewClient() should initialize at least one regex")
 					}
+				}
+			}
+		})
+	}
+}
+
+func TestVersionsFromTagRegex(t *testing.T) {
+	tests := []struct {
+		name  string
+		tags  []*github.RepositoryTag
+		regex string
+		want  []string
+	}{
+		{
+			name: "matching tags",
+			tags: []*github.RepositoryTag{
+				{Name: github.String("v1.18.10")},
+				{Name: github.String("v1.18.11")},
+				{Name: github.String("release-2025-09-01")},
+			},
+			regex: "^(v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?)$",
+			want:  []string{"v1.18.10", "v1.18.11"},
+		},
+		{
+			name: "no matching tags",
+			tags: []*github.RepositoryTag{
+				{Name: github.String("release-2025-09-01")},
+			},
+			regex: "^(v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?)$",
+			want:  []string{},
+		},
+		{
+			name: "rakurai-style release tags return captured version segment",
+			tags: []*github.RepositoryTag{
+				{Name: github.String("release/v3.1.8-rakurai.0")},
+				{Name: github.String("release/v3.1.8-rakurai.0_testnet")},
+				{Name: github.String("release/v3.0.14-rakurai.1.b")},
+			},
+			regex: "^release/(v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?-rakurai\\.[0-9]+)(?:_testnet)?$",
+			want:  []string{"v3.1.8-rakurai.0", "v3.1.8-rakurai.0"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			regex, err := regexp.Compile(tt.regex)
+			if err != nil {
+				t.Fatalf("Failed to compile regex: %v", err)
+			}
+
+			got := versionsFromTagRegex(tt.tags, regex)
+			if len(got) != len(tt.want) {
+				t.Errorf("versionsFromTagRegex() returned %d versions, want %d", len(got), len(tt.want))
+			}
+
+			for _, wantVersion := range tt.want {
+				found := false
+				for _, gotVersion := range got {
+					if gotVersion == wantVersion {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("versionsFromTagRegex() missing expected version: %s", wantVersion)
 				}
 			}
 		})

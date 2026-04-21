@@ -10,7 +10,7 @@ import (
 
 // Validator represents the validator configuration
 type Validator struct {
-	// Client is the solana validator client - one of: agave, jito-solana, firedancer
+	// Client is the solana validator client - one of: agave, jito-solana, rakurai, firedancer
 	Client string `koanf:"client"`
 	// RPCURL is the URL of the validator's RPC endpoint
 	RPCURL string `koanf:"rpc_url"`
