@@ -136,7 +136,9 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 			versionStrings[cluster] = versionsFromReleaseBodyRegex(releases, c.releaseNotesRegexes[cluster])
 		}
 		return c.latestVersionFromClusterVersionStrings(versionStrings)
-	case constants.ClientNameJitoSolana, constants.ClientNameFiredancer:
+	case constants.ClientNameJitoSolana:
+		return c.getLatestJitoSolanaVersion(ctx)
+	case constants.ClientNameFiredancer:
 		releases, _, err := c.client.Repositories.ListReleases(ctx, c.repoOwner, c.repoName, &github.ListOptions{
 			PerPage: 20, // We just need the last few releases
 		})
@@ -144,7 +146,7 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 			return nil, fmt.Errorf("failed to get releases: %w", err)
 		}
 		versionStrings := make(map[string][]string)
-		// jito-solana and firedancer flags release cluster in release title prefix
+		// firedancer flags release cluster in release title prefix
 		for _, cluster := range constants.ValidClusterNames {
 			versionStrings[cluster] = versionsFromReleaseTitleRegex(releases, c.releaseTitleRegexes[cluster])
 		}
@@ -154,6 +156,45 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 	default:
 		return nil, fmt.Errorf("unsupported client: %s", c.clientName)
 	}
+}
+
+func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion *version.Version, err error) {
+	jitoReleases, _, err := c.client.Repositories.ListReleases(ctx, c.repoOwner, c.repoName, &github.ListOptions{
+		PerPage: 100,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get jito-solana releases: %w", err)
+	}
+
+	agaveOwner, agaveRepo, err := ownerAndRepoFromURL(clientRepoConfigs[constants.ClientNameAgave].URL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract agave owner/repo from URL: %w", err)
+	}
+
+	agaveReleases, _, err := c.client.Repositories.ListReleases(ctx, agaveOwner, agaveRepo, &github.ListOptions{
+		PerPage: 100,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get agave releases for jito-solana classification: %w", err)
+	}
+
+	versionStrings := make(map[string][]string)
+	// jito-solana tags are Agave versions with a -jito suffix. Classify the
+	// underlying Agave version from Agave release notes, then map back to the
+	// matching Jito release tag so title prefixes are not required.
+	for _, cluster := range constants.ValidClusterNames {
+		agaveReleaseNotesRegex, err := regexp.Compile(clientRepoConfigs[constants.ClientNameAgave].ReleaseNotesRegexes[cluster])
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile agave release notes regex for jito-solana classification: %w", err)
+		}
+		versionStrings[cluster] = jitoVersionStringsFromAgaveReleaseBodyRegex(
+			jitoReleases,
+			agaveReleases,
+			agaveReleaseNotesRegex,
+		)
+	}
+
+	return c.latestVersionFromClusterVersionStrings(versionStrings)
 }
 
 func (c *Client) getLatestRakuraiVersion(ctx context.Context) (latestVersion *version.Version, err error) {
@@ -506,6 +547,52 @@ func versionsFromReleaseBodyRegex(releases []*github.RepositoryRelease, regex *r
 		}
 	}
 	return versionStrings
+}
+
+func jitoVersionStringsFromAgaveReleaseBodyRegex(jitoReleases []*github.RepositoryRelease, agaveReleases []*github.RepositoryRelease, regex *regexp.Regexp) (versionStrings []string) {
+	agaveVersionKeys := make(map[string]struct{})
+	for _, agaveVersionString := range versionsFromReleaseBodyRegex(agaveReleases, regex) {
+		key, err := versionKey(agaveVersionString)
+		if err != nil {
+			log.Debug("skipping unparsable agave release version", "version", agaveVersionString, "error", err)
+			continue
+		}
+		agaveVersionKeys[key] = struct{}{}
+	}
+
+	for _, release := range jitoReleases {
+		if release.GetPrerelease() {
+			log.Debug("skipping github pre-release", "title", release.GetName(), "tag", release.GetTagName())
+			continue
+		}
+
+		tagName := release.GetTagName()
+		agaveVersionString := jitoVersionSuffixRegex.ReplaceAllString(tagName, "")
+		if agaveVersionString == tagName {
+			continue
+		}
+
+		key, err := versionKey(agaveVersionString)
+		if err != nil {
+			log.Debug("skipping jito-solana release with unparsable agave version", "title", release.GetName(), "tag", tagName, "version", agaveVersionString, "error", err)
+			continue
+		}
+
+		if _, ok := agaveVersionKeys[key]; ok {
+			log.Debug("found matching jito-solana release by agave classification", "title", release.GetName(), "tag", tagName, "agaveVersion", agaveVersionString)
+			versionStrings = append(versionStrings, tagName)
+		}
+	}
+
+	return versionStrings
+}
+
+func versionKey(versionString string) (string, error) {
+	v, err := version.NewVersion(versionString)
+	if err != nil {
+		return "", err
+	}
+	return v.String(), nil
 }
 
 // setOwnerAndRepo extracts owner and repo from a GitHub URL

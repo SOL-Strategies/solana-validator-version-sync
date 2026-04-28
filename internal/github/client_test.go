@@ -424,6 +424,86 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 	}
 }
 
+func TestJitoVersionStringsFromAgaveReleaseBodyRegex(t *testing.T) {
+	mainnetRegex := regexp.MustCompile(clientRepoConfigs[constants.ClientNameAgave].ReleaseNotesRegexes[constants.ClusterNameMainnetBeta])
+	testnetRegex := regexp.MustCompile(clientRepoConfigs[constants.ClientNameAgave].ReleaseNotesRegexes[constants.ClusterNameTestnet])
+
+	jitoReleases := []*github.RepositoryRelease{
+		{
+			Name:    github.String("v3.1.14-jito"),
+			TagName: github.String("v3.1.14-jito"),
+		},
+		{
+			Name:    github.String("Testnet - v4.0.0-beta.2-jito"),
+			TagName: github.String("v4.0.0-beta.2-jito"),
+		},
+		{
+			Name:    github.String("v3.0.6-jito.1"),
+			TagName: github.String("v3.0.6-jito.1"),
+		},
+		{
+			Name:       github.String("v3.1.15-jito"),
+			TagName:    github.String("v3.1.15-jito"),
+			Prerelease: github.Bool(true),
+		},
+		{
+			Name:    github.String("unrelated"),
+			TagName: github.String("v3.1.16"),
+		},
+	}
+
+	agaveReleases := []*github.RepositoryRelease{
+		{
+			Body:    github.String("This a stable Mainnet release."),
+			TagName: github.String("v3.1.14"),
+		},
+		{
+			Body:    github.String("This is a Testnet release."),
+			TagName: github.String("v4.0.0-beta.2"),
+		},
+		{
+			Body:    github.String("This is a stable release suitable for use on Mainnet Beta."),
+			TagName: github.String("v3.0.6"),
+		},
+		{
+			Body:    github.String("This is a stable Mainnet release."),
+			TagName: github.String("v3.1.15"),
+		},
+	}
+
+	tests := []struct {
+		name  string
+		regex *regexp.Regexp
+		want  []string
+	}{
+		{
+			name:  "mainnet release matches unprefixed jito title",
+			regex: mainnetRegex,
+			want:  []string{"v3.1.14-jito", "v3.0.6-jito.1"},
+		},
+		{
+			name:  "testnet release matches agave testnet classification",
+			regex: testnetRegex,
+			want:  []string{"v4.0.0-beta.2-jito"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := jitoVersionStringsFromAgaveReleaseBodyRegex(jitoReleases, agaveReleases, tt.regex)
+			if len(got) != len(tt.want) {
+				t.Fatalf("jitoVersionStringsFromAgaveReleaseBodyRegex() returned %d versions, want %d: got %v", len(got), len(tt.want), got)
+			}
+
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("jitoVersionStringsFromAgaveReleaseBodyRegex()[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestClientRepoConfigs(t *testing.T) {
 	tests := []struct {
 		clientName string
