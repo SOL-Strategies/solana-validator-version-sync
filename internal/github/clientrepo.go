@@ -15,7 +15,7 @@ var clientRepoConfigs = map[string]ClientRepoConfig{
 		URL: "https://github.com/anza-xyz/agave",
 		ReleaseNotesRegexes: map[string]string{
 			constants.ClusterNameMainnetBeta: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release).*",
-			constants.ClusterNameTestnet:     ".*This is a Testnet release.*",
+			constants.ClusterNameTestnet:     "(?is).*(This is a testnet release|recommended for testnet).*",
 		},
 	},
 	constants.ClientNameJitoSolana: {

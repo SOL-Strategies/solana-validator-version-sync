@@ -149,6 +149,12 @@ func TestVersionDiff_IsUpgrade(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "release candidate upgrade from beta jito tag",
+			from:     "v4.0.0-beta.7-jito",
+			to:       "v4.0.0-rc.0-jito",
+			expected: true,
+		},
+		{
 			name:     "pre-release to release",
 			from:     "1.18.0-beta.1",
 			to:       "1.18.0",
@@ -246,7 +252,6 @@ func TestVersionDiff_IsDowngrade(t *testing.T) {
 		})
 	}
 }
-
 
 func TestVersionDiff_Direction(t *testing.T) {
 	tests := []struct {

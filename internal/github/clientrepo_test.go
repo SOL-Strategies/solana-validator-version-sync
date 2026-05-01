@@ -172,7 +172,7 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			clientName: constants.ClientNameAgave,
 			cluster:    constants.ClusterNameTestnet,
 			regexType:  "ReleaseNotesRegex",
-			regex:      ".*This is a Testnet release.*",
+			regex:      "(?is).*(This is a testnet release|recommended for testnet).*",
 		},
 		{
 			clientName: constants.ClientNameJitoSolana,
