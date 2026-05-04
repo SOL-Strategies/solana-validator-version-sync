@@ -346,7 +346,7 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 				{Body: github.String("This is a stable release suitable for use on Mainnet Beta"), TagName: github.String("v1.19.0")},
 				{Body: github.String("Some other release notes"), TagName: github.String("v1.20.0")},
 			},
-			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release).*",
+			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
 			want:  []string{"v1.18.0", "v1.19.0"},
 		},
 		{
@@ -356,7 +356,7 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 				{Body: github.String("This is a Testnet release"), TagName: github.String("v3.1.10-testnet")},
 				{Body: github.String("Some other release notes"), TagName: github.String("v3.1.10")},
 			},
-			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release).*",
+			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
 			want:  []string{"v3.1.11"},
 		},
 		{
@@ -366,7 +366,7 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 				{Body: github.String("This is a stable Mainnet release"), TagName: github.String("v3.1.11")},
 				{Body: github.String("This is a Testnet release"), TagName: github.String("v3.1.12-testnet")},
 			},
-			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release).*",
+			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
 			want:  []string{"v3.1.10", "v3.1.11"},
 		},
 		{
@@ -375,7 +375,7 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 				{Body: github.String("This a stable Mainnet release.\n\nhttps://github.com/anza-xyz/agave/blob/v3.1/CHANGELOG.md"), TagName: github.String("v3.1.11")},
 				{Body: github.String("This is a Testnet release"), TagName: github.String("v3.1.11-testnet")},
 			},
-			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release).*",
+			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
 			want:  []string{"v3.1.11"},
 		},
 		{
@@ -384,13 +384,13 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 				{Body: github.String("This is a Testnet release"), TagName: github.String("v1.17.0")},
 				{Body: github.String("Some other release notes"), TagName: github.String("v1.20.0")},
 			},
-			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release).*",
+			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
 			want:  []string{},
 		},
 		{
 			name:     "empty releases",
 			releases: []*github.RepositoryRelease{},
-			regex:    ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release).*",
+			regex:    ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
 			want:     []string{},
 		},
 	}
@@ -453,9 +453,9 @@ func TestAgaveReleaseNotesRegexes(t *testing.T) {
 		want  []string
 	}{
 		{
-			name:  "mainnet stable excludes testnet and upgrade candidates",
+			name:  "mainnet includes stable and upgrade candidate releases",
 			regex: mainnetRegex,
-			want:  []string{"v3.1.14"},
+			want:  []string{"v3.1.14", "v4.0.0-rc.0"},
 		},
 		{
 			name:  "testnet includes direct and recommended testnet releases",
@@ -541,9 +541,9 @@ func TestJitoVersionStringsFromAgaveReleaseBodyRegex(t *testing.T) {
 		want  []string
 	}{
 		{
-			name:  "mainnet release matches unprefixed jito title",
+			name:  "mainnet release matches agave mainnet classification",
 			regex: mainnetRegex,
-			want:  []string{"v3.1.14-jito", "v3.0.6-jito.1"},
+			want:  []string{"v3.1.14-jito", "v4.0.0-rc.0-jito", "v3.0.6-jito.1"},
 		},
 		{
 			name:  "testnet release matches agave testnet classification",
