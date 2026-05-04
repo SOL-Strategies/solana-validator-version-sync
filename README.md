@@ -3,6 +3,8 @@
 
 A simple version synchronization manager for Solana validators, including [SFDP](https://solana.org/delegation-program) compliance.
 
+Run doublezero too? Keep it up to date too with [doublezero-version-sync](https://github.com/SOL-Strategies/doublezero-version-sync)
+
 ![solanna-validator-version-sync](vhs/demo.gif)
 
 
