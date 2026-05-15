@@ -472,6 +472,14 @@ func (c *Client) NormalizeToTagVersion(v *version.Version) *version.Version {
 		return v
 
 	case constants.ClientNameFiredancer:
+		// If the RPC already reports the tag-shaped version, preserve that exact
+		// release before falling back to looser Firedancer matching.
+		for _, tagged := range c.cachedTagVersions {
+			if tagged.Equal(v) {
+				return tagged
+			}
+		}
+
 		segs := v.Segments()
 		if len(segs) < 3 {
 			return v
@@ -482,25 +490,37 @@ func (c *Client) NormalizeToTagVersion(v *version.Version) *version.Version {
 		// different MINOR, e.g. 0.33670.40002 matching tag v0.902.40002.
 		featureSet := segs[2]
 		if featureSet != 0 {
+			var matchingTag *version.Version
 			for _, tagged := range c.cachedTagVersions {
 				tagSegs := tagged.Segments()
 				if len(tagSegs) >= 3 && tagSegs[2] == featureSet {
-					c.logger.Debug("normalized firedancer running version to tag version (feature-set match)",
-						"running", v.Original(), "tag", tagged.Original())
-					return tagged
+					if matchingTag == nil || tagged.GreaterThan(matchingTag) {
+						matchingTag = tagged
+					}
 				}
+			}
+			if matchingTag != nil {
+				c.logger.Debug("normalized firedancer running version to tag version (feature-set match)",
+					"running", v.Original(), "tag", matchingTag.Original())
+				return matchingTag
 			}
 		}
 
 		// Strategy 2: match by MAJOR.MINOR when PATCH is zero (or feature-set match found nothing).
 		// Handles the case where the RPC returns EPOCH.RELEASE.0, e.g. 0.902.0 matching tag v0.902.40002.
+		var matchingTag *version.Version
 		for _, tagged := range c.cachedTagVersions {
 			tagSegs := tagged.Segments()
 			if len(tagSegs) >= 3 && tagSegs[0] == segs[0] && tagSegs[1] == segs[1] {
-				c.logger.Debug("normalized firedancer running version to tag version (major.minor match)",
-					"running", v.Original(), "tag", tagged.Original())
-				return tagged
+				if matchingTag == nil || tagged.GreaterThan(matchingTag) {
+					matchingTag = tagged
+				}
 			}
+		}
+		if matchingTag != nil {
+			c.logger.Debug("normalized firedancer running version to tag version (major.minor match)",
+				"running", v.Original(), "tag", matchingTag.Original())
+			return matchingTag
 		}
 
 		c.logger.Warn("could not normalize firedancer running version to tag version - no cached tag matched by feature-set or major.minor",

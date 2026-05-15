@@ -270,6 +270,20 @@ func TestNormalizeToTagVersion(t *testing.T) {
 			input:          "0.33670.40002",
 			want:           "0.902.40002",
 		},
+		{
+			name:           "firedancer: exact tag-format match wins over duplicate feature-set",
+			clientName:     constants.ClientNameFiredancer,
+			cachedVersions: []string{"v0.821.30114", "v0.822.30114", "v0.909.40001"},
+			input:          "0.822.30114",
+			want:           "0.822.30114",
+		},
+		{
+			name:           "firedancer: duplicate feature-set match picks latest tag",
+			clientName:     constants.ClientNameFiredancer,
+			cachedVersions: []string{"v0.821.30114", "v0.822.30114"},
+			input:          "0.33670.30114",
+			want:           "0.822.30114",
+		},
 		// MAJOR.MINOR matching: current RPC format where PATCH is 0 (e.g. 0.902.0 vs tag v0.902.40002)
 		{
 			name:           "firedancer: normalizes 0.902.0 to 0.902.40002 by major.minor match",
