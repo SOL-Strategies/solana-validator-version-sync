@@ -495,6 +495,66 @@ func TestAgaveReleaseNotesRegexes(t *testing.T) {
 	}
 }
 
+func TestFiredancerVersionStringsByClusterIncludesMainnetSuitableTestnetRelease(t *testing.T) {
+	client, err := NewClient(Options{
+		Cluster: constants.ClusterNameMainnetBeta,
+		Client:  constants.ClientNameFiredancer,
+	})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	mainnetSuitableNotes := "This is a Testnet release. It may also be used on mainnet with a small amount of stake in accordance with Anza's guidelines for v4.0.0-rc.1."
+	releases := []*github.RepositoryRelease{
+		{
+			Name:    github.String("Frankendancer Mainnet v0.822.30114"),
+			TagName: github.String("v0.822.30114"),
+			Body:    github.String("This is a mainnet ready release."),
+		},
+		{
+			Name:    github.String("Frankendancer Testnet v0.909.40001"),
+			TagName: github.String("v0.909.40001"),
+			Body:    github.String(mainnetSuitableNotes),
+		},
+		{
+			Name:    github.String("Frankendancer Testnet v0.910.40002"),
+			TagName: github.String("v0.910.40002"),
+			Body:    github.String("This is a Testnet release."),
+		},
+		{
+			Name:       github.String("Frankendancer Testnet v0.911.40003"),
+			TagName:    github.String("v0.911.40003"),
+			Body:       github.String(mainnetSuitableNotes),
+			Prerelease: github.Bool(true),
+		},
+	}
+
+	got := client.firedancerVersionStringsByCluster(releases)
+	assertVersionStringsEqual(t, got[constants.ClusterNameMainnetBeta], []string{"v0.822.30114", "v0.909.40001"})
+	assertVersionStringsEqual(t, got[constants.ClusterNameTestnet], []string{"v0.909.40001", "v0.910.40002"})
+
+	latestMainnet, err := client.latestVersionFromClusterVersionStrings(got)
+	if err != nil {
+		t.Fatalf("latestVersionFromClusterVersionStrings() error = %v", err)
+	}
+	if latestMainnet.Original() != "v0.909.40001" {
+		t.Errorf("latestVersionFromClusterVersionStrings() = %q, want %q", latestMainnet.Original(), "v0.909.40001")
+	}
+}
+
+func assertVersionStringsEqual(t *testing.T, got []string, want []string) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("got %d versions, want %d: got %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("version[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestClientLatestVersionFromClusterVersionStringsPrefersStableV4OverReleaseCandidates(t *testing.T) {
 	for _, cluster := range []string{constants.ClusterNameMainnetBeta, constants.ClusterNameTestnet} {
 		t.Run(cluster, func(t *testing.T) {

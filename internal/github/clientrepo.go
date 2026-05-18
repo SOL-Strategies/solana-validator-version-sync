@@ -37,6 +37,9 @@ var clientRepoConfigs = map[string]ClientRepoConfig{
 	},
 	constants.ClientNameFiredancer: {
 		URL: "https://github.com/firedancer-io/firedancer",
+		ReleaseNotesRegexes: map[string]string{
+			constants.ClusterNameMainnetBeta: "(?is).*This is a Testnet release\\.[^\\n]*(may also be used on mainnet|also (?:be )?suitable for mainnet).*",
+		},
 		ReleaseTitleRegexes: map[string]string{
 			// One day this will change from Frankendancer to Firedancer so we match on dancer suffix
 			constants.ClusterNameMainnetBeta: "^(.*)dancer Mainnet v([0-9]+\\.[0-9]+\\.[0-9]+)$",

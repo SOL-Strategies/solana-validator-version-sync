@@ -126,9 +126,11 @@ func TestClientRepoConfigs_FiredancerConfig(t *testing.T) {
 		}
 	}
 
-	// Firedancer should not have ReleaseNotesRegexes
-	if config.ReleaseNotesRegexes != nil {
-		t.Errorf("Firedancer should not have ReleaseNotesRegexes, but found: %v", config.ReleaseNotesRegexes)
+	if _, exists := config.ReleaseNotesRegexes[constants.ClusterNameMainnetBeta]; !exists {
+		t.Errorf("Firedancer ReleaseNotesRegex not found for cluster: %s", constants.ClusterNameMainnetBeta)
+	}
+	if _, exists := config.ReleaseNotesRegexes[constants.ClusterNameTestnet]; exists {
+		t.Errorf("Firedancer should not need a testnet ReleaseNotesRegex, but found one")
 	}
 }
 
@@ -203,6 +205,12 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			cluster:    constants.ClusterNameMainnetBeta,
 			regexType:  "ReleaseTitleRegex",
 			regex:      "^(.*)dancer Mainnet v([0-9]+\\.[0-9]+\\.[0-9]+)$",
+		},
+		{
+			clientName: constants.ClientNameFiredancer,
+			cluster:    constants.ClusterNameMainnetBeta,
+			regexType:  "ReleaseNotesRegex",
+			regex:      "(?is).*This is a Testnet release\\.[^\\n]*(may also be used on mainnet|also (?:be )?suitable for mainnet).*",
 		},
 		{
 			clientName: constants.ClientNameFiredancer,

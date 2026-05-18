@@ -145,17 +145,33 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 		if err != nil {
 			return nil, fmt.Errorf("failed to get releases: %w", err)
 		}
-		versionStrings := make(map[string][]string)
-		// firedancer flags release cluster in release title prefix
-		for _, cluster := range constants.ValidClusterNames {
-			versionStrings[cluster] = versionsFromReleaseTitleRegex(releases, c.releaseTitleRegexes[cluster])
-		}
-		return c.latestVersionFromClusterVersionStrings(versionStrings)
+		return c.latestVersionFromClusterVersionStrings(c.firedancerVersionStringsByCluster(releases))
 	case constants.ClientNameRakurai:
 		return c.getLatestRakuraiVersion(ctx)
 	default:
 		return nil, fmt.Errorf("unsupported client: %s", c.clientName)
 	}
+}
+
+func (c *Client) firedancerVersionStringsByCluster(releases []*github.RepositoryRelease) map[string][]string {
+	versionStrings := make(map[string][]string)
+	// Firedancer usually flags release cluster in the release title prefix.
+	for _, cluster := range constants.ValidClusterNames {
+		versionStrings[cluster] = versionsFromReleaseTitleRegex(releases, c.releaseTitleRegexes[cluster])
+	}
+
+	// Some Testnet-titled Frankendancer releases are explicitly suitable for
+	// limited mainnet use in the notes. Treat only those as mainnet candidates.
+	testnetTitleRegex := c.releaseTitleRegexes[constants.ClusterNameTestnet]
+	mainnetNotesRegex := c.releaseNotesRegexes[constants.ClusterNameMainnetBeta]
+	if testnetTitleRegex != nil && mainnetNotesRegex != nil {
+		versionStrings[constants.ClusterNameMainnetBeta] = appendUniqueVersionStrings(
+			versionStrings[constants.ClusterNameMainnetBeta],
+			versionsFromReleaseTitleAndBodyRegex(releases, testnetTitleRegex, mainnetNotesRegex)...,
+		)
+	}
+
+	return versionStrings
 }
 
 func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion *version.Version, err error) {
@@ -543,6 +559,37 @@ func versionsFromReleaseTitleRegex(releases []*github.RepositoryRelease, regex *
 			versionStrings = append(versionStrings, release.GetTagName())
 		}
 	}
+	return versionStrings
+}
+
+func versionsFromReleaseTitleAndBodyRegex(releases []*github.RepositoryRelease, titleRegex *regexp.Regexp, bodyRegex *regexp.Regexp) (versionStrings []string) {
+	for _, release := range releases {
+		if release.GetPrerelease() {
+			log.Debug("skipping github pre-release", "title", release.GetName(), "tag", release.GetTagName())
+			continue
+		}
+		if titleRegex.MatchString(release.GetName()) && bodyRegex.MatchString(release.GetBody()) {
+			log.Debug("found matching release by title and notes", "title", release.GetName(), "tag", release.GetTagName(), "version", release.GetTagName())
+			versionStrings = append(versionStrings, release.GetTagName())
+		}
+	}
+	return versionStrings
+}
+
+func appendUniqueVersionStrings(versionStrings []string, candidates ...string) []string {
+	seen := make(map[string]struct{}, len(versionStrings)+len(candidates))
+	for _, versionString := range versionStrings {
+		seen[versionString] = struct{}{}
+	}
+
+	for _, candidate := range candidates {
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		versionStrings = append(versionStrings, candidate)
+		seen[candidate] = struct{}{}
+	}
+
 	return versionStrings
 }
 
