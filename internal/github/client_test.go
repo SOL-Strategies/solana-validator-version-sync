@@ -332,6 +332,8 @@ func TestVersionsFromReleaseTitleRegex(t *testing.T) {
 }
 
 func TestVersionsFromReleaseBodyRegex(t *testing.T) {
+	mainnetRegex := clientRepoConfigs[constants.ClientNameAgave].ReleaseNotesRegexes[constants.ClusterNameMainnetBeta]
+
 	tests := []struct {
 		name     string
 		releases []*github.RepositoryRelease
@@ -346,7 +348,7 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 				{Body: github.String("This is a stable release suitable for use on Mainnet Beta"), TagName: github.String("v1.19.0")},
 				{Body: github.String("Some other release notes"), TagName: github.String("v1.20.0")},
 			},
-			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
+			regex: mainnetRegex,
 			want:  []string{"v1.18.0", "v1.19.0"},
 		},
 		{
@@ -356,7 +358,7 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 				{Body: github.String("This is a Testnet release"), TagName: github.String("v3.1.10-testnet")},
 				{Body: github.String("Some other release notes"), TagName: github.String("v3.1.10")},
 			},
-			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
+			regex: mainnetRegex,
 			want:  []string{"v3.1.11"},
 		},
 		{
@@ -366,7 +368,7 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 				{Body: github.String("This is a stable Mainnet release"), TagName: github.String("v3.1.11")},
 				{Body: github.String("This is a Testnet release"), TagName: github.String("v3.1.12-testnet")},
 			},
-			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
+			regex: mainnetRegex,
 			want:  []string{"v3.1.10", "v3.1.11"},
 		},
 		{
@@ -375,8 +377,17 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 				{Body: github.String("This a stable Mainnet release.\n\nhttps://github.com/anza-xyz/agave/blob/v3.1/CHANGELOG.md"), TagName: github.String("v3.1.11")},
 				{Body: github.String("This is a Testnet release"), TagName: github.String("v3.1.11-testnet")},
 			},
-			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
+			regex: mainnetRegex,
 			want:  []string{"v3.1.11"},
+		},
+		{
+			name: "matching releases with v4 stable mainnet and testnet phrase",
+			releases: []*github.RepositoryRelease{
+				{Body: github.String("This a stable release suitable for Testnet, Devnet and Mainnet Beta."), TagName: github.String("v4.0.0")},
+				{Body: github.String("This is Mainnet-beta Upgrade Candidate release. It is also recommended for Testnet and Devnet."), TagName: github.String("v4.0.0-rc.1")},
+			},
+			regex: mainnetRegex,
+			want:  []string{"v4.0.0", "v4.0.0-rc.1"},
 		},
 		{
 			name: "no matching releases",
@@ -384,13 +395,13 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 				{Body: github.String("This is a Testnet release"), TagName: github.String("v1.17.0")},
 				{Body: github.String("Some other release notes"), TagName: github.String("v1.20.0")},
 			},
-			regex: ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
+			regex: mainnetRegex,
 			want:  []string{},
 		},
 		{
 			name:     "empty releases",
 			releases: []*github.RepositoryRelease{},
-			regex:    ".*(This is a stable release suitable for use on Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
+			regex:    mainnetRegex,
 			want:     []string{},
 		},
 	}
@@ -445,6 +456,10 @@ func TestAgaveReleaseNotesRegexes(t *testing.T) {
 			Body:    github.String("This is Mainnet-beta Upgrade Candidate release. It is also recommended for Testnet and Devnet."),
 			TagName: github.String("v4.0.0-rc.0"),
 		},
+		{
+			Body:    github.String("This a stable release suitable for Testnet, Devnet and Mainnet Beta."),
+			TagName: github.String("v4.0.0"),
+		},
 	}
 
 	tests := []struct {
@@ -455,12 +470,12 @@ func TestAgaveReleaseNotesRegexes(t *testing.T) {
 		{
 			name:  "mainnet includes stable and upgrade candidate releases",
 			regex: mainnetRegex,
-			want:  []string{"v3.1.14", "v4.0.0-rc.0"},
+			want:  []string{"v3.1.14", "v4.0.0-rc.0", "v4.0.0"},
 		},
 		{
 			name:  "testnet includes direct and recommended testnet releases",
 			regex: testnetRegex,
-			want:  []string{"v4.0.0-beta.7", "v4.0.0-beta.5", "v4.0.0-rc.0"},
+			want:  []string{"v4.0.0-beta.7", "v4.0.0-beta.5", "v4.0.0-rc.0", "v4.0.0"},
 		},
 	}
 
@@ -475,6 +490,36 @@ func TestAgaveReleaseNotesRegexes(t *testing.T) {
 				if got[i] != tt.want[i] {
 					t.Errorf("versionsFromReleaseBodyRegex()[%d] = %q, want %q", i, got[i], tt.want[i])
 				}
+			}
+		})
+	}
+}
+
+func TestClientLatestVersionFromClusterVersionStringsPrefersStableV4OverReleaseCandidates(t *testing.T) {
+	for _, cluster := range []string{constants.ClusterNameMainnetBeta, constants.ClusterNameTestnet} {
+		t.Run(cluster, func(t *testing.T) {
+			client, err := NewClient(Options{
+				Cluster: cluster,
+				Client:  constants.ClientNameAgave,
+			})
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+
+			got, err := client.latestVersionFromClusterVersionStrings(map[string][]string{
+				constants.ClusterNameMainnetBeta: {"v3.1.14", "v4.0.0-rc.0", "v4.0.0-rc.1", "v4.0.0"},
+				constants.ClusterNameTestnet:     {"v4.0.0-beta.7", "v4.0.0-rc.0", "v4.0.0-rc.1", "v4.0.0"},
+			})
+			if err != nil {
+				t.Fatalf("latestVersionFromClusterVersionStrings() error = %v", err)
+			}
+
+			want, err := version.NewVersion("v4.0.0")
+			if err != nil {
+				t.Fatalf("NewVersion() error = %v", err)
+			}
+			if !got.Equal(want) {
+				t.Errorf("latestVersionFromClusterVersionStrings() = %q, want %q", got.Original(), want.Original())
 			}
 		})
 	}
