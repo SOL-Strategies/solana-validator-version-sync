@@ -72,7 +72,7 @@ func New(opts Options) (v *Validator, err error) {
 		Client:  v.cfg.Client,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create github client: %w", err)
 	}
 	v.sfdpClient = sfdp.NewClient(sfdp.Options{
 		Cluster: opts.Cluster,

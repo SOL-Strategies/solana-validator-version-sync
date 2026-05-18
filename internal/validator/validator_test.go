@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gagliardetto/solana-go"
@@ -271,6 +272,36 @@ func TestNew(t *testing.T) {
 
 	if validator.githubClient == nil {
 		t.Error("New() should set githubClient")
+	}
+}
+
+func TestNew_UnknownValidatorClient(t *testing.T) {
+	activeKeypair, _ := solana.NewRandomPrivateKey()
+	passiveKeypair, _ := solana.NewRandomPrivateKey()
+
+	opts := Options{
+		Cluster:    "mainnet-beta",
+		SyncConfig: config.Sync{},
+		ValidatorConfig: config.Validator{
+			Client:            "not-a-real-client-name",
+			RPCURL:            "http://localhost:8899",
+			VersionConstraint: ">= 1.0.0",
+			Identities: config.Identities{
+				ActiveKeyPair:  activeKeypair,
+				PassiveKeyPair: passiveKeypair,
+			},
+		},
+	}
+
+	validator, err := New(opts)
+	if err == nil {
+		t.Fatal("New() should fail for unknown validator client")
+	}
+	if validator != nil {
+		t.Error("New() should return nil validator on github client error")
+	}
+	if !strings.Contains(err.Error(), "failed to create github client") {
+		t.Errorf("New() error = %q, want github client context", err.Error())
 	}
 }
 
