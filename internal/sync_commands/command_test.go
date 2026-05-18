@@ -431,20 +431,11 @@ func TestExecOptions_EnvironmentSlice(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.opts.EnvironmentSlice()
 
-			// The actual implementation has a bug where it creates a slice with len(Environment)
-			// and then appends to it, so the length is 2 * len(Environment)
-			expectedLength := len(tt.expected) * 2
-			if len(tt.expected) == 0 {
-				expectedLength = 0
-			}
-
-			// Check length (accounting for the bug in the implementation)
-			if len(result) != expectedLength {
-				t.Errorf("EnvironmentSlice() length = %d, want %d", len(result), expectedLength)
+			if len(result) != len(tt.expected) {
+				t.Errorf("EnvironmentSlice() length = %d, want %d", len(result), len(tt.expected))
 			}
 
 			// Check that all expected values are present (order may vary due to map iteration)
-			// We need to check for duplicates since the implementation has a bug
 			for _, expected := range tt.expected {
 				found := false
 				for _, actual := range result {

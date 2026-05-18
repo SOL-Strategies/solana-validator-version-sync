@@ -274,6 +274,33 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestNew_UnknownValidatorClient(t *testing.T) {
+	activeKeypair, _ := solana.NewRandomPrivateKey()
+	passiveKeypair, _ := solana.NewRandomPrivateKey()
+
+	opts := Options{
+		Cluster:    "mainnet-beta",
+		SyncConfig: config.Sync{},
+		ValidatorConfig: config.Validator{
+			Client:            "not-a-real-client-name",
+			RPCURL:            "http://localhost:8899",
+			VersionConstraint: ">= 1.0.0",
+			Identities: config.Identities{
+				ActiveKeyPair:  activeKeypair,
+				PassiveKeyPair: passiveKeypair,
+			},
+		},
+	}
+
+	v, err := New(opts)
+	if err == nil {
+		t.Fatal("New() should fail for unknown validator client")
+	}
+	if v != nil {
+		t.Error("New() should return nil validator on github client error")
+	}
+}
+
 func TestNew_InvalidCommand(t *testing.T) {
 	// Create test keypairs
 	activeKeypair, _ := solana.NewRandomPrivateKey()
