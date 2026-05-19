@@ -254,14 +254,14 @@ func (c *Client) latestVersionFromClusterVersionStrings(versionStrings map[strin
 	c.cachedTagVersions = nil
 	c.cachedTagInfos = nil
 	for cluster, versionStrings := range versionStrings {
-		sortedVersions := c.sortedVersionsFromVersionStrings(versionStrings)
-		latestClusterVersion[cluster] = sortedVersions[len(sortedVersions)-1]
-		c.cachedTagVersions = append(c.cachedTagVersions, sortedVersions...)
-		for _, tagged := range sortedVersions {
-			c.cachedTagInfos = append(c.cachedTagInfos, tagVersionInfo{
-				TagName: tagged.Original(),
-				Version: tagged,
-			})
+		sortedTagInfos := c.sortedTagVersionInfosFromVersionStrings(versionStrings)
+		if len(sortedTagInfos) == 0 {
+			return nil, fmt.Errorf("no parsable %s versions found for client %s", cluster, c.clientName)
+		}
+		latestClusterVersion[cluster] = sortedTagInfos[len(sortedTagInfos)-1].Version
+		for _, tagInfo := range sortedTagInfos {
+			c.cachedTagVersions = append(c.cachedTagVersions, tagInfo.Version)
+			c.cachedTagInfos = append(c.cachedTagInfos, tagInfo)
 		}
 		c.logger.Debug("latest version "+latestClusterVersion[cluster].Original(), "client", c.clientName, "cluster", cluster, "repoURL", c.versionSourceURL())
 	}
@@ -723,14 +723,51 @@ func tagVersionInfosFromTagRegex(tags []*github.RepositoryTag, regex *regexp.Reg
 	return tagInfos
 }
 
-func (c *Client) sortedVersionsFromVersionStrings(versionStrings []string) (sortedVersions []*version.Version) {
+func (c *Client) sortedTagVersionInfosFromVersionStrings(versionStrings []string) (sortedTagInfos []tagVersionInfo) {
 	c.logger.Debug("sorting versions", "versionStrings", versionStrings)
-	sortedVersions = make([]*version.Version, len(versionStrings))
-	for i, raw := range versionStrings {
-		v, _ := version.NewVersion(raw)
-		sortedVersions[i] = v
+	sortedTagInfos = make([]tagVersionInfo, 0, len(versionStrings))
+	for _, raw := range versionStrings {
+		tagInfo, err := c.tagVersionInfoFromVersionString(raw)
+		if err != nil {
+			c.logger.Debug("skipping unparsable version", "version", raw, "error", err)
+			continue
+		}
+		sortedTagInfos = append(sortedTagInfos, tagInfo)
 	}
-	sort.Sort(version.Collection(sortedVersions))
-	c.logger.Debug("sorted versions", "sortedVersions", sortedVersions)
-	return sortedVersions
+	sort.Slice(sortedTagInfos, func(i, j int) bool {
+		if !sortedTagInfos[i].Version.Equal(sortedTagInfos[j].Version) {
+			return sortedTagInfos[i].Version.LessThan(sortedTagInfos[j].Version)
+		}
+		return versionTagLess(sortedTagInfos[i].TagName, sortedTagInfos[j].TagName)
+	})
+	c.logger.Debug("sorted versions", "sortedVersions", sortedTagInfos)
+	return sortedTagInfos
+}
+
+func (c *Client) tagVersionInfoFromVersionString(raw string) (tagVersionInfo, error) {
+	versionString := raw
+	if c.clientName == constants.ClientNameJitoSolana {
+		// Jito tags append -jito[.N] to the upstream Agave version. Compare on
+		// the Agave version so stable releases sort above their release candidates.
+		versionString = jitoVersionSuffixRegex.ReplaceAllString(raw, "")
+	}
+
+	parsedVersion, err := version.NewVersion(versionString)
+	if err != nil {
+		return tagVersionInfo{}, err
+	}
+
+	return tagVersionInfo{
+		TagName: raw,
+		Version: parsedVersion,
+	}, nil
+}
+
+func versionTagLess(a, b string) bool {
+	parsedA, errA := version.NewVersion(a)
+	parsedB, errB := version.NewVersion(b)
+	if errA == nil && errB == nil && !parsedA.Equal(parsedB) {
+		return parsedA.LessThan(parsedB)
+	}
+	return a < b
 }
