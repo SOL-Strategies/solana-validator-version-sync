@@ -585,6 +585,77 @@ func TestClientLatestVersionFromClusterVersionStringsPrefersStableV4OverReleaseC
 	}
 }
 
+func TestClientLatestJitoVersionFromClusterVersionStringsPrefersStableV4OverReleaseCandidates(t *testing.T) {
+	mustVersion := func(s string) *version.Version {
+		v, err := version.NewVersion(s)
+		if err != nil {
+			t.Fatalf("NewVersion(%q) error = %v", s, err)
+		}
+		return v
+	}
+
+	tests := []struct {
+		name            string
+		cluster         string
+		mainnetVersions []string
+		testnetVersions []string
+		wantTag         string
+	}{
+		{
+			name:            "mainnet stable beats mainnet release candidate",
+			cluster:         constants.ClusterNameMainnetBeta,
+			mainnetVersions: []string{"v3.1.14-jito", "v4.0.0-rc.1-jito", "v4.0.0-jito"},
+			testnetVersions: []string{"v4.0.0-beta.7-jito", "v4.0.0-rc.1-jito"},
+			wantTag:         "v4.0.0-jito",
+		},
+		{
+			name:            "testnet advances to mainnet stable when testnet latest is release candidate",
+			cluster:         constants.ClusterNameTestnet,
+			mainnetVersions: []string{"v4.0.0-rc.1-jito", "v4.0.0-jito"},
+			testnetVersions: []string{"v4.0.0-beta.7-jito", "v4.0.0-rc.1-jito"},
+			wantTag:         "v4.0.0-jito",
+		},
+		{
+			name:            "testnet stable beats testnet release candidate",
+			cluster:         constants.ClusterNameTestnet,
+			mainnetVersions: []string{"v3.1.14-jito"},
+			testnetVersions: []string{"v4.0.0-beta.7-jito", "v4.0.0-rc.1-jito", "v4.0.0-jito"},
+			wantTag:         "v4.0.0-jito",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(Options{
+				Cluster: tt.cluster,
+				Client:  constants.ClientNameJitoSolana,
+			})
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+
+			got, err := client.latestVersionFromClusterVersionStrings(map[string][]string{
+				constants.ClusterNameMainnetBeta: tt.mainnetVersions,
+				constants.ClusterNameTestnet:     tt.testnetVersions,
+			})
+			if err != nil {
+				t.Fatalf("latestVersionFromClusterVersionStrings() error = %v", err)
+			}
+
+			want := mustVersion("v4.0.0")
+			if !got.Equal(want) {
+				t.Errorf("latestVersionFromClusterVersionStrings() = %q, want %q", got.Original(), want.Original())
+			}
+			if !got.GreaterThan(mustVersion("v4.0.0-rc.1")) {
+				t.Errorf("latestVersionFromClusterVersionStrings() = %q, want it to sort above v4.0.0-rc.1", got.Original())
+			}
+			if gotTag := client.TagNameForVersion(got); gotTag != tt.wantTag {
+				t.Errorf("TagNameForVersion() = %q, want %q", gotTag, tt.wantTag)
+			}
+		})
+	}
+}
+
 func TestJitoVersionStringsFromAgaveReleaseBodyRegex(t *testing.T) {
 	mainnetRegex := regexp.MustCompile(clientRepoConfigs[constants.ClientNameAgave].ReleaseNotesRegexes[constants.ClusterNameMainnetBeta])
 	testnetRegex := regexp.MustCompile(clientRepoConfigs[constants.ClientNameAgave].ReleaseNotesRegexes[constants.ClusterNameTestnet])
@@ -601,6 +672,10 @@ func TestJitoVersionStringsFromAgaveReleaseBodyRegex(t *testing.T) {
 		{
 			Name:    github.String("Testnet - v4.0.0-rc.0-jito"),
 			TagName: github.String("v4.0.0-rc.0-jito"),
+		},
+		{
+			Name:    github.String("Mainnet - v4.0.0-jito"),
+			TagName: github.String("v4.0.0-jito"),
 		},
 		{
 			Name:    github.String("v3.0.6-jito.1"),
@@ -632,6 +707,10 @@ func TestJitoVersionStringsFromAgaveReleaseBodyRegex(t *testing.T) {
 		},
 		{
 			Body:    github.String("This is a stable release suitable for use on Mainnet Beta."),
+			TagName: github.String("v4.0.0"),
+		},
+		{
+			Body:    github.String("This is a stable release suitable for use on Mainnet Beta."),
 			TagName: github.String("v3.0.6"),
 		},
 		{
@@ -648,7 +727,7 @@ func TestJitoVersionStringsFromAgaveReleaseBodyRegex(t *testing.T) {
 		{
 			name:  "mainnet release matches agave mainnet classification",
 			regex: mainnetRegex,
-			want:  []string{"v3.1.14-jito", "v4.0.0-rc.0-jito", "v3.0.6-jito.1"},
+			want:  []string{"v3.1.14-jito", "v4.0.0-rc.0-jito", "v4.0.0-jito", "v3.0.6-jito.1"},
 		},
 		{
 			name:  "testnet release matches agave testnet classification",
