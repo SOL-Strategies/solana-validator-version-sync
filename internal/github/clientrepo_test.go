@@ -1,14 +1,25 @@
 package github
 
 import (
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/charmbracelet/log"
+	gogithub "github.com/google/go-github/v74/github"
 	goversion "github.com/hashicorp/go-version"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/constants"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
 
 func TestClientRepoConfig_StructFields(t *testing.T) {
 	config := ClientRepoConfig{
@@ -417,8 +428,8 @@ func TestNormalizeToTagVersion(t *testing.T) {
 			}
 
 			got := c.NormalizeToTagVersion(mustVersion(tt.input))
-			if got.Core().String() != mustVersion(tt.want).Core().String() {
-				t.Errorf("NormalizeToTagVersion(%q) = %q, want %q", tt.input, got.Core().String(), tt.want)
+			if got.String() != mustVersion(tt.want).String() {
+				t.Errorf("NormalizeToTagVersion(%q) = %q, want %q", tt.input, got.String(), tt.want)
 			}
 		})
 	}
@@ -629,6 +640,131 @@ func TestTagNameForVersion_Rakurai(t *testing.T) {
 
 	if got := mainnetClient.TagNameForVersion(mustVersion("3.1.8")); got != "release/v3.1.8-rakurai.0" {
 		t.Errorf("TagNameForVersion() mainnet = %q, want %q", got, "release/v3.1.8-rakurai.0")
+	}
+}
+
+func TestTagNameForVersion_JitoSolana(t *testing.T) {
+	mustVersion := func(s string) *goversion.Version {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		return v
+	}
+
+	client := &Client{
+		clientName: constants.ClientNameJitoSolana,
+		cachedTagInfos: []tagVersionInfo{
+			{TagName: "v4.1.0-beta.1-jito", Version: mustVersion("v4.1.0-beta.1")},
+			{TagName: "v3.0.6-jito.1", Version: mustVersion("v3.0.6")},
+		},
+	}
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "pre-release agave version maps to full jito tag",
+			input: "4.1.0-beta.1",
+			want:  "v4.1.0-beta.1-jito",
+		},
+		{
+			name:  "stable agave version maps to jito patch suffix tag",
+			input: "3.0.6",
+			want:  "v3.0.6-jito.1",
+		},
+		{
+			name:  "unknown version falls back unchanged",
+			input: "4.1.0-beta.2",
+			want:  "4.1.0-beta.2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := client.TagNameForVersion(mustVersion(tt.input)); got != tt.want {
+				t.Errorf("TagNameForVersion(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasTaggedVersion_JitoSolanaCachesMatchingTag(t *testing.T) {
+	mustVersion := func(s string) *goversion.Version {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		return v
+	}
+
+	tests := []struct {
+		name    string
+		tags    string
+		target  string
+		wantHas bool
+		wantTag string
+	}{
+		{
+			name:    "caches exact jito pre-release tag",
+			tags:    `[{"name":"v4.1.0-beta.1-jito"}]`,
+			target:  "4.1.0-beta.1",
+			wantHas: true,
+			wantTag: "v4.1.0-beta.1-jito",
+		},
+		{
+			name:    "does not match different jito pre-release by core only",
+			tags:    `[{"name":"v4.1.0-beta.2-jito"}]`,
+			target:  "4.1.0-beta.1",
+			wantHas: false,
+			wantTag: "4.1.0-beta.1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			httpClient := &http.Client{
+				Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					if r.URL.Path != "/repos/jito-foundation/jito-solana/tags" {
+						return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
+					}
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": []string{"application/json"}},
+						Body:       io.NopCloser(strings.NewReader(tt.tags)),
+						Request:    r,
+					}, nil
+				}),
+			}
+
+			ghClient := gogithub.NewClient(httpClient)
+			baseURL, err := url.Parse("https://api.github.test/")
+			if err != nil {
+				t.Fatalf("failed to parse test GitHub API URL: %v", err)
+			}
+			ghClient.BaseURL = baseURL
+
+			client := &Client{
+				clientName: constants.ClientNameJitoSolana,
+				repoOwner:  "jito-foundation",
+				repoName:   "jito-solana",
+				client:     ghClient,
+				logger:     log.WithPrefix("test"),
+			}
+
+			has, err := client.HasTaggedVersion(mustVersion(tt.target))
+			if err != nil {
+				t.Fatalf("HasTaggedVersion() error = %v", err)
+			}
+			if has != tt.wantHas {
+				t.Fatalf("HasTaggedVersion() = %v, want %v", has, tt.wantHas)
+			}
+			if got := client.TagNameForVersion(mustVersion(tt.target)); got != tt.wantTag {
+				t.Errorf("TagNameForVersion() = %q, want %q", got, tt.wantTag)
+			}
+		})
 	}
 }
 

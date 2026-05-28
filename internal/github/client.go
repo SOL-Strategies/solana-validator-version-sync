@@ -342,6 +342,27 @@ func (c *Client) HasTaggedVersion(testVersion *version.Version) (hasTaggedVersio
 		return false, nil
 	}
 
+	if c.clientName == constants.ClientNameJitoSolana {
+		for _, tag := range tags {
+			if !jitoVersionSuffixRegex.MatchString(tag.GetName()) {
+				continue
+			}
+
+			tagInfo, err := c.tagVersionInfoFromVersionString(tag.GetName())
+			if err != nil {
+				c.logger.Debug("skipping jito-solana tag with unparsable version", "tag", tag.GetName(), "error", err)
+				continue
+			}
+
+			c.logger.Debug("comparing jito-solana tag version to test version", "tag", tagInfo.TagName, "tagVersion", tagInfo.Version.Original(), "testVersion", testVersion.Original())
+			if tagInfo.Version.Equal(testVersion) {
+				c.cacheTagInfo(tagInfo)
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+
 	// check over the returned tags
 	for _, tag := range tags {
 		// parse the tag version into a version.Version so we can compare the core versions
@@ -400,6 +421,14 @@ func (c *Client) TagNameForVersion(v *version.Version) string {
 		}
 	}
 
+	if c.clientName == constants.ClientNameJitoSolana {
+		for _, tagInfo := range c.cachedTagInfos {
+			if c.jitoTagInfoMatchesVersion(tagInfo, v) {
+				return tagInfo.TagName
+			}
+		}
+	}
+
 	return v.Original()
 }
 
@@ -416,6 +445,35 @@ func (c *Client) setCachedTagInfos(tagInfos []tagVersionInfo) {
 	for _, tagInfo := range tagInfos {
 		c.cachedTagVersions = append(c.cachedTagVersions, tagInfo.Version)
 	}
+}
+
+func (c *Client) cacheTagInfo(tagInfo tagVersionInfo) {
+	for _, cached := range c.cachedTagInfos {
+		if cached.TagName == tagInfo.TagName {
+			return
+		}
+	}
+
+	c.cachedTagInfos = append(c.cachedTagInfos, tagInfo)
+	c.cachedTagVersions = append(c.cachedTagVersions, tagInfo.Version)
+}
+
+func (c *Client) jitoTagInfoMatchesVersion(tagInfo tagVersionInfo, v *version.Version) bool {
+	if tagInfo.Version.Equal(v) {
+		return true
+	}
+
+	strippedTagName := jitoVersionSuffixRegex.ReplaceAllString(tagInfo.TagName, "")
+	if strippedTagName == tagInfo.TagName {
+		return false
+	}
+
+	strippedVersion, err := version.NewVersion(strippedTagName)
+	if err != nil {
+		return false
+	}
+
+	return strippedVersion.Equal(v)
 }
 
 // NormalizeToTagVersion translates the running version reported by the validator RPC
