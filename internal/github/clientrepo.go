@@ -42,9 +42,9 @@ var clientRepoConfigs = map[string]ClientRepoConfig{
 		},
 		ReleaseTitleRegexes: map[string]string{
 			// One day this will change from Frankendancer to Firedancer so we match on dancer suffix
-			constants.ClusterNameMainnetBeta: "^(.*)dancer Mainnet v([0-9]+\\.[0-9]+\\.[0-9]+)$",
+			constants.ClusterNameMainnetBeta: "^(.*)dancer Mainnet v([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
 			// One day this will change from Frankendancer to Firedancer so we match on dancer suffix
-			constants.ClusterNameTestnet: "^(.*)dancer Testnet v([0-9]+\\.[0-9]+\\.[0-9]+)$",
+			constants.ClusterNameTestnet: "^(.*)dancer Testnet v([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
 		},
 	},
 }

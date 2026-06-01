@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/hashicorp/go-version"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/config"
+	"github.com/sol-strategies/solana-validator-version-sync/internal/constants"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/github"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/rpc"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/sfdp"
@@ -282,6 +283,34 @@ func (v *Validator) getSFDPCompliantVersion(targetVersion *version.Version) (sfd
 	}
 
 	v.logger.Debug("got latest requirements from SFDP", "sfdpRequirements", sfdpRequirements.Constraints.String())
+
+	if constants.NormalizeClientName(v.cfg.Client) == constants.ClientNameFiredancer {
+		sfdpCompliantVersion, err = v.githubClient.ResolveFiredancerSFDPCompliantVersion(
+			targetVersion,
+			sfdpRequirements.MinVersion,
+			sfdpRequirements.HasMinVersion,
+			sfdpRequirements.MaxVersion,
+			sfdpRequirements.HasMaxVersion,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if sfdpCompliantVersion.Equal(targetVersion) {
+			v.logger.Info("target version is within SFDP constraints",
+				"targetVersion", targetVersion.Original(),
+				"sfdpRequirement", sfdpRequirements.Constraints.String(),
+			)
+			return sfdpCompliantVersion, nil
+		}
+
+		v.logger.Warn("target version is not within SFDP constraints - updating to SFDP compliant firedancer tag",
+			"targetVersion", targetVersion.Original(),
+			"sfdpCompliantVersion", sfdpCompliantVersion.Original(),
+			"sfdpRequirement", sfdpRequirements.Constraints.String(),
+		)
+		return sfdpCompliantVersion, nil
+	}
 
 	// target version is within SFDP constraints
 	if sfdpRequirements.Constraints.Check(targetVersion.Core()) {
