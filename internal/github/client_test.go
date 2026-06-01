@@ -522,9 +522,10 @@ func TestFiredancerVersionStringsByClusterIncludesMainnetSuitableTestnetRelease(
 			Body:    github.String("This is a Testnet release."),
 		},
 		{
-			Name:    github.String("Frankendancer Testnet v0.1001.40101 (Agave v0.101.0-beta.40101)"),
-			TagName: github.String("v0.1001.40101"),
-			Body:    github.String("This is a Testnet release."),
+			Name:       github.String("Frankendancer Testnet v0.1001.40101"),
+			TagName:    github.String("v0.1001.40101"),
+			Body:       github.String("This is a Testnet release."),
+			Prerelease: github.Bool(true),
 		},
 		{
 			Name:       github.String("Frankendancer Testnet v0.911.40003"),
@@ -536,7 +537,7 @@ func TestFiredancerVersionStringsByClusterIncludesMainnetSuitableTestnetRelease(
 
 	got := client.firedancerVersionStringsByCluster(releases)
 	assertVersionStringsEqual(t, got[constants.ClusterNameMainnetBeta], []string{"v0.822.30114", "v0.909.40001"})
-	assertVersionStringsEqual(t, got[constants.ClusterNameTestnet], []string{"v0.909.40001", "v0.910.40002", "v0.1001.40101"})
+	assertVersionStringsEqual(t, got[constants.ClusterNameTestnet], []string{"v0.909.40001", "v0.910.40002", "v0.1001.40101", "v0.911.40003"})
 
 	latestMainnet, err := client.latestVersionFromClusterVersionStrings(got)
 	if err != nil {

@@ -159,7 +159,7 @@ func (c *Client) firedancerVersionStringsByCluster(releases []*github.Repository
 	versionStrings := make(map[string][]string)
 	// Firedancer usually flags release cluster in the release title prefix.
 	for _, cluster := range constants.ValidClusterNames {
-		versionStrings[cluster] = versionsFromReleaseTitleRegex(releases, c.releaseTitleRegexes[cluster])
+		versionStrings[cluster] = versionsFromReleaseTitleRegexWithPrerelease(releases, c.releaseTitleRegexes[cluster], cluster == constants.ClusterNameTestnet)
 	}
 
 	// Some Testnet-titled Frankendancer releases are explicitly suitable for
@@ -758,8 +758,12 @@ func (c *Client) NormalizeToTagVersion(v *version.Version) *version.Version {
 
 // versionsFromReleaseTitleRegex gets versions from non-prerelease releases with titles matching the supplied regex
 func versionsFromReleaseTitleRegex(releases []*github.RepositoryRelease, regex *regexp.Regexp) (versionStrings []string) {
+	return versionsFromReleaseTitleRegexWithPrerelease(releases, regex, false)
+}
+
+func versionsFromReleaseTitleRegexWithPrerelease(releases []*github.RepositoryRelease, regex *regexp.Regexp, includePrereleases bool) (versionStrings []string) {
 	for _, release := range releases {
-		if release.GetPrerelease() {
+		if release.GetPrerelease() && !includePrereleases {
 			log.Debug("skipping github pre-release", "title", release.GetName(), "tag", release.GetTagName())
 			continue
 		}

@@ -116,7 +116,7 @@ func (m *Manager) runSyncVersionInterval(intervalDuration time.Duration) {
 	)
 
 	if err != nil {
-		m.logger.Error(msg)
+		m.logger.Error(msg, "error", err)
 	} else {
 		m.logger.Info(msg)
 	}
