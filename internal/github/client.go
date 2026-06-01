@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -258,6 +260,9 @@ func (c *Client) latestVersionFromClusterVersionStrings(versionStrings map[strin
 		if len(sortedTagInfos) == 0 {
 			return nil, fmt.Errorf("no parsable %s versions found for client %s", cluster, c.clientName)
 		}
+		for i := range sortedTagInfos {
+			sortedTagInfos[i].TestnetOnly = cluster == constants.ClusterNameTestnet
+		}
 		latestClusterVersion[cluster] = sortedTagInfos[len(sortedTagInfos)-1].Version
 		for _, tagInfo := range sortedTagInfos {
 			c.cachedTagVersions = append(c.cachedTagVersions, tagInfo.Version)
@@ -430,6 +435,152 @@ func (c *Client) TagNameForVersion(v *version.Version) string {
 	}
 
 	return v.Original()
+}
+
+// ResolveFiredancerSFDPCompliantVersion maps SFDP Firedancer requirements to
+// actual Firedancer repo tags. SFDP may publish compatibility-shaped versions
+// like 0.101.0-beta.40101, while the repo tag is shaped like v0.1001.40101.
+func (c *Client) ResolveFiredancerSFDPCompliantVersion(targetVersion *version.Version, minVersion *version.Version, hasMinVersion bool, maxVersion *version.Version, hasMaxVersion bool) (*version.Version, error) {
+	if c.clientName != constants.ClientNameFiredancer {
+		return nil, fmt.Errorf("firedancer SFDP resolver called for client %s", c.clientName)
+	}
+
+	targetKey, err := firedancerCompatibilityKey(targetVersion)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse firedancer target compatibility key from %s: %w", targetVersion.Original(), err)
+	}
+
+	var minKey int64
+	if hasMinVersion {
+		minKey, err = firedancerCompatibilityKey(minVersion)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse firedancer SFDP min compatibility key from %s: %w", minVersion.Original(), err)
+		}
+	}
+
+	var maxKey int64
+	if hasMaxVersion {
+		maxKey, err = firedancerCompatibilityKey(maxVersion)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse firedancer SFDP max compatibility key from %s: %w", maxVersion.Original(), err)
+		}
+	}
+
+	if firedancerCompatibilityKeySatisfies(targetKey, minKey, hasMinVersion, maxKey, hasMaxVersion) {
+		return targetVersion, nil
+	}
+
+	preferHighestCompatible := hasMaxVersion && targetKey > maxKey
+	selectedVersion, ok, err := c.selectFiredancerTagByCompatibilityKey(minKey, hasMinVersion, maxKey, hasMaxVersion, preferHighestCompatible)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("no firedancer tag in cached release list satisfies SFDP requirement %s", firedancerRequirementString(minVersion, hasMinVersion, maxVersion, hasMaxVersion))
+	}
+
+	return selectedVersion, nil
+}
+
+func (c *Client) selectFiredancerTagByCompatibilityKey(minKey int64, hasMinVersion bool, maxKey int64, hasMaxVersion bool, preferHighestCompatible bool) (*version.Version, bool, error) {
+	candidates := c.cachedTagInfos
+	if len(candidates) == 0 {
+		candidates = make([]tagVersionInfo, 0, len(c.cachedTagVersions))
+		for _, cachedVersion := range c.cachedTagVersions {
+			candidates = append(candidates, tagVersionInfo{
+				TagName: cachedVersion.Original(),
+				Version: cachedVersion,
+			})
+		}
+	}
+
+	var selected tagVersionInfo
+	var selectedKey int64
+	for _, candidate := range candidates {
+		if c.cluster == constants.ClusterNameMainnetBeta && candidate.TestnetOnly {
+			continue
+		}
+
+		candidateKey, err := firedancerCompatibilityKey(candidate.Version)
+		if err != nil {
+			c.logger.Debug("skipping firedancer tag with unparsable compatibility key",
+				"tag", candidate.TagName,
+				"version", candidate.Version.Original(),
+				"error", err,
+			)
+			continue
+		}
+		if !firedancerCompatibilityKeySatisfies(candidateKey, minKey, hasMinVersion, maxKey, hasMaxVersion) {
+			continue
+		}
+
+		if selected.Version == nil {
+			selected = candidate
+			selectedKey = candidateKey
+			continue
+		}
+
+		if preferHighestCompatible {
+			if candidateKey > selectedKey || (candidateKey == selectedKey && candidate.Version.GreaterThan(selected.Version)) {
+				selected = candidate
+				selectedKey = candidateKey
+			}
+			continue
+		}
+
+		if candidateKey < selectedKey || (candidateKey == selectedKey && candidate.Version.GreaterThan(selected.Version)) {
+			selected = candidate
+			selectedKey = candidateKey
+		}
+	}
+
+	if selected.Version == nil {
+		return nil, false, nil
+	}
+	return selected.Version, true, nil
+}
+
+func firedancerCompatibilityKeySatisfies(key int64, minKey int64, hasMinVersion bool, maxKey int64, hasMaxVersion bool) bool {
+	if hasMinVersion && key < minKey {
+		return false
+	}
+	if hasMaxVersion && key > maxKey {
+		return false
+	}
+	return true
+}
+
+func firedancerCompatibilityKey(v *version.Version) (int64, error) {
+	if prerelease := v.Prerelease(); prerelease != "" {
+		parts := strings.Split(prerelease, ".")
+		for i := len(parts) - 1; i >= 0; i-- {
+			key, err := strconv.ParseInt(parts[i], 10, 64)
+			if err == nil {
+				return key, nil
+			}
+		}
+		return 0, fmt.Errorf("pre-release %q has no numeric compatibility component", prerelease)
+	}
+
+	segments := v.Segments()
+	if len(segments) < 3 {
+		return 0, fmt.Errorf("version %q has fewer than three segments", v.Original())
+	}
+	return int64(segments[2]), nil
+}
+
+func firedancerRequirementString(minVersion *version.Version, hasMinVersion bool, maxVersion *version.Version, hasMaxVersion bool) string {
+	requirements := make([]string, 0, 2)
+	if hasMinVersion {
+		requirements = append(requirements, ">= "+minVersion.Original())
+	}
+	if hasMaxVersion {
+		requirements = append(requirements, "<= "+maxVersion.Original())
+	}
+	if len(requirements) == 0 {
+		return "<none>"
+	}
+	return strings.Join(requirements, ",")
 }
 
 func (c *Client) versionSourceURL() string {

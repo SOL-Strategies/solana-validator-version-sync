@@ -215,7 +215,7 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			clientName: constants.ClientNameFiredancer,
 			cluster:    constants.ClusterNameMainnetBeta,
 			regexType:  "ReleaseTitleRegex",
-			regex:      "^(.*)dancer Mainnet v([0-9]+\\.[0-9]+\\.[0-9]+)$",
+			regex:      "^(.*)dancer Mainnet v([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
 		},
 		{
 			clientName: constants.ClientNameFiredancer,
@@ -227,7 +227,7 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			clientName: constants.ClientNameFiredancer,
 			cluster:    constants.ClusterNameTestnet,
 			regexType:  "ReleaseTitleRegex",
-			regex:      "^(.*)dancer Testnet v([0-9]+\\.[0-9]+\\.[0-9]+)$",
+			regex:      "^(.*)dancer Testnet v([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
 		},
 	}
 
@@ -253,6 +253,55 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 
 			if actualRegex != tt.regex {
 				t.Errorf("%s = %v, want %v", tt.regexType, actualRegex, tt.regex)
+			}
+		})
+	}
+}
+
+func TestFiredancerCompatibilityKey(t *testing.T) {
+	mustVersion := func(s string) *goversion.Version {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		return v
+	}
+
+	tests := []struct {
+		name string
+		in   string
+		want int64
+	}{
+		{
+			name: "repo tag with feature-set patch",
+			in:   "v0.910.40000",
+			want: 40000,
+		},
+		{
+			name: "newer repo tag with feature-set patch",
+			in:   "v0.1001.40101",
+			want: 40101,
+		},
+		{
+			name: "SFDP beta-shaped compatibility version",
+			in:   "0.101.0-beta.40101",
+			want: 40101,
+		},
+		{
+			name: "RPC beta-shaped compatibility version",
+			in:   "0.902.0-beta.40002",
+			want: 40002,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := firedancerCompatibilityKey(mustVersion(tt.in))
+			if err != nil {
+				t.Fatalf("firedancerCompatibilityKey() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("firedancerCompatibilityKey(%q) = %d, want %d", tt.in, got, tt.want)
 			}
 		})
 	}
@@ -432,6 +481,149 @@ func TestNormalizeToTagVersion(t *testing.T) {
 				t.Errorf("NormalizeToTagVersion(%q) = %q, want %q", tt.input, got.String(), tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveFiredancerSFDPCompliantVersion(t *testing.T) {
+	mustVersion := func(s string) *goversion.Version {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		return v
+	}
+
+	clientWithTags := func(tags ...string) *Client {
+		tagInfos := make([]tagVersionInfo, 0, len(tags))
+		tagVersions := make([]*goversion.Version, 0, len(tags))
+		for _, tag := range tags {
+			v := mustVersion(tag)
+			tagInfos = append(tagInfos, tagVersionInfo{
+				TagName: tag,
+				Version: v,
+			})
+			tagVersions = append(tagVersions, v)
+		}
+		return &Client{
+			clientName:        constants.ClientNameFiredancer,
+			cachedTagInfos:    tagInfos,
+			cachedTagVersions: tagVersions,
+			logger:            log.WithPrefix("test"),
+		}
+	}
+
+	tests := []struct {
+		name      string
+		tags      []string
+		target    string
+		min       string
+		hasMin    bool
+		max       string
+		hasMax    bool
+		want      string
+		wantError bool
+	}{
+		{
+			name:   "maps SFDP beta min to matching repo tag",
+			tags:   []string{"v0.910.40000", "v0.1001.40101"},
+			target: "v0.910.40000",
+			min:    "0.101.0-beta.40101",
+			hasMin: true,
+			want:   "v0.1001.40101",
+		},
+		{
+			name:   "keeps target when compatibility key satisfies min",
+			tags:   []string{"v0.910.40000", "v0.1001.40101"},
+			target: "v0.1001.40101",
+			min:    "0.101.0-beta.40101",
+			hasMin: true,
+			want:   "v0.1001.40101",
+		},
+		{
+			name:      "errors when no cached repo tag satisfies min",
+			tags:      []string{"v0.910.40000"},
+			target:    "v0.910.40000",
+			min:       "0.101.0-beta.40101",
+			hasMin:    true,
+			wantError: true,
+		},
+		{
+			name:   "selects highest compatible tag for max bound",
+			tags:   []string{"v0.909.39999", "v0.910.40000", "v0.1001.40101"},
+			target: "v0.1001.40101",
+			max:    "0.910.40000",
+			hasMax: true,
+			want:   "v0.910.40000",
+		},
+		{
+			name:   "uses latest tag when duplicate compatibility keys exist",
+			tags:   []string{"v0.1000.40101", "v0.1001.40101"},
+			target: "v0.910.40000",
+			min:    "0.101.0-beta.40101",
+			hasMin: true,
+			want:   "v0.1001.40101",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var minVersion *goversion.Version
+			if tt.hasMin {
+				minVersion = mustVersion(tt.min)
+			}
+			var maxVersion *goversion.Version
+			if tt.hasMax {
+				maxVersion = mustVersion(tt.max)
+			}
+
+			got, err := clientWithTags(tt.tags...).ResolveFiredancerSFDPCompliantVersion(
+				mustVersion(tt.target),
+				minVersion,
+				tt.hasMin,
+				maxVersion,
+				tt.hasMax,
+			)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("ResolveFiredancerSFDPCompliantVersion() error = %v, wantError %v", err, tt.wantError)
+			}
+			if tt.wantError {
+				return
+			}
+			if got.Original() != tt.want {
+				t.Errorf("ResolveFiredancerSFDPCompliantVersion() = %q, want %q", got.Original(), tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveFiredancerSFDPCompliantVersionDoesNotSelectTestnetOnlyTagForMainnet(t *testing.T) {
+	mustVersion := func(s string) *goversion.Version {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		return v
+	}
+
+	client := &Client{
+		clientName: constants.ClientNameFiredancer,
+		cluster:    constants.ClusterNameMainnetBeta,
+		cachedTagInfos: []tagVersionInfo{
+			{TagName: "v0.910.40000", Version: mustVersion("v0.910.40000")},
+			{TagName: "v0.1001.40101", Version: mustVersion("v0.1001.40101"), TestnetOnly: true},
+		},
+		logger: log.WithPrefix("test"),
+	}
+
+	_, err := client.ResolveFiredancerSFDPCompliantVersion(
+		mustVersion("v0.910.40000"),
+		mustVersion("0.101.0-beta.40101"),
+		true,
+		nil,
+		false,
+	)
+	if err == nil {
+		t.Fatal("ResolveFiredancerSFDPCompliantVersion() should not select a testnet-only tag for mainnet")
 	}
 }
 
