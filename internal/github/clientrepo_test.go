@@ -179,7 +179,7 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			clientName: constants.ClientNameAgave,
 			cluster:    constants.ClusterNameMainnetBeta,
 			regexType:  "ReleaseNotesRegex",
-			regex:      "(?i).*(This (?:is )?a stable release suitable for [^\\n]*Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
+			regex:      "(?i).*(This (?:is )?a stable release suitable for [^\\n]*Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?a stable release\\s*(?:[.\\r\\n]|$)|This (?:is )?(?:a )?Mainnet-beta Upgrade Candidate release).*",
 		},
 		{
 			clientName: constants.ClientNameAgave,

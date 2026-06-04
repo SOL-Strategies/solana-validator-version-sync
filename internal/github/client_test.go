@@ -390,6 +390,16 @@ func TestVersionsFromReleaseBodyRegex(t *testing.T) {
 			want:  []string{"v4.0.0", "v4.0.0-rc.1"},
 		},
 		{
+			name: "matching bare stable release phrase",
+			releases: []*github.RepositoryRelease{
+				{Body: github.String("This is a stable release.\n\nSee the changelog for more details."), TagName: github.String("v4.0.1")},
+				{Body: github.String("This a stable release."), TagName: github.String("v4.0.2")},
+				{Body: github.String("This is a stable release suitable for Testnet and Devnet."), TagName: github.String("v4.1.0")},
+			},
+			regex: mainnetRegex,
+			want:  []string{"v4.0.1", "v4.0.2"},
+		},
+		{
 			name: "no matching releases",
 			releases: []*github.RepositoryRelease{
 				{Body: github.String("This is a Testnet release"), TagName: github.String("v1.17.0")},
@@ -460,6 +470,14 @@ func TestAgaveReleaseNotesRegexes(t *testing.T) {
 			Body:    github.String("This a stable release suitable for Testnet, Devnet and Mainnet Beta."),
 			TagName: github.String("v4.0.0"),
 		},
+		{
+			Body:    github.String("This is a stable release."),
+			TagName: github.String("v4.0.1"),
+		},
+		{
+			Body:    github.String("This is a stable release suitable for Testnet and Devnet."),
+			TagName: github.String("v4.1.0"),
+		},
 	}
 
 	tests := []struct {
@@ -470,12 +488,12 @@ func TestAgaveReleaseNotesRegexes(t *testing.T) {
 		{
 			name:  "mainnet includes stable and upgrade candidate releases",
 			regex: mainnetRegex,
-			want:  []string{"v3.1.14", "v4.0.0-rc.0", "v4.0.0"},
+			want:  []string{"v3.1.14", "v4.0.0-rc.0", "v4.0.0", "v4.0.1"},
 		},
 		{
 			name:  "testnet includes direct and recommended testnet releases",
 			regex: testnetRegex,
-			want:  []string{"v4.0.0-beta.7", "v4.0.0-beta.5", "v4.0.0-rc.0", "v4.0.0"},
+			want:  []string{"v4.0.0-beta.7", "v4.0.0-beta.5", "v4.0.0-rc.0", "v4.0.0", "v4.1.0"},
 		},
 	}
 
@@ -684,6 +702,10 @@ func TestJitoVersionStringsFromAgaveReleaseBodyRegex(t *testing.T) {
 			TagName: github.String("v4.0.0-jito"),
 		},
 		{
+			Name:    github.String("v4.0.1-jito"),
+			TagName: github.String("v4.0.1-jito"),
+		},
+		{
 			Name:    github.String("v3.0.6-jito.1"),
 			TagName: github.String("v3.0.6-jito.1"),
 		},
@@ -716,6 +738,14 @@ func TestJitoVersionStringsFromAgaveReleaseBodyRegex(t *testing.T) {
 			TagName: github.String("v4.0.0"),
 		},
 		{
+			Body:    github.String("This is a stable release."),
+			TagName: github.String("v4.0.1"),
+		},
+		{
+			Body:    github.String("This is a stable release suitable for Testnet and Devnet."),
+			TagName: github.String("v4.1.0"),
+		},
+		{
 			Body:    github.String("This is a stable release suitable for use on Mainnet Beta."),
 			TagName: github.String("v3.0.6"),
 		},
@@ -733,7 +763,7 @@ func TestJitoVersionStringsFromAgaveReleaseBodyRegex(t *testing.T) {
 		{
 			name:  "mainnet release matches agave mainnet classification",
 			regex: mainnetRegex,
-			want:  []string{"v3.1.14-jito", "v4.0.0-rc.0-jito", "v4.0.0-jito", "v3.0.6-jito.1"},
+			want:  []string{"v3.1.14-jito", "v4.0.0-rc.0-jito", "v4.0.0-jito", "v4.0.1-jito", "v3.0.6-jito.1"},
 		},
 		{
 			name:  "testnet release matches agave testnet classification",
