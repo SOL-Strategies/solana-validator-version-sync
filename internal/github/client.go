@@ -209,6 +209,7 @@ func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion 
 			jitoReleases,
 			agaveReleases,
 			agaveReleaseNotesRegex,
+			cluster == constants.ClusterNameTestnet,
 		)
 	}
 
@@ -817,8 +818,12 @@ func versionsFromTagRegex(tags []*github.RepositoryTag, regex *regexp.Regexp) (v
 
 // versionsFromReleaseBodyRegex gets versions from non-prerelease releases with bodies matching the supplied regex
 func versionsFromReleaseBodyRegex(releases []*github.RepositoryRelease, regex *regexp.Regexp) (versionStrings []string) {
+	return versionsFromReleaseBodyRegexWithPrerelease(releases, regex, false)
+}
+
+func versionsFromReleaseBodyRegexWithPrerelease(releases []*github.RepositoryRelease, regex *regexp.Regexp, includePrereleases bool) (versionStrings []string) {
 	for _, release := range releases {
-		if release.GetPrerelease() {
+		if release.GetPrerelease() && !includePrereleases {
 			log.Debug("skipping github pre-release", "title", release.GetName(), "tag", release.GetTagName())
 			continue
 		}
@@ -829,9 +834,9 @@ func versionsFromReleaseBodyRegex(releases []*github.RepositoryRelease, regex *r
 	return versionStrings
 }
 
-func jitoVersionStringsFromAgaveReleaseBodyRegex(jitoReleases []*github.RepositoryRelease, agaveReleases []*github.RepositoryRelease, regex *regexp.Regexp) (versionStrings []string) {
+func jitoVersionStringsFromAgaveReleaseBodyRegex(jitoReleases []*github.RepositoryRelease, agaveReleases []*github.RepositoryRelease, regex *regexp.Regexp, includePrereleases bool) (versionStrings []string) {
 	agaveVersionKeys := make(map[string]struct{})
-	for _, agaveVersionString := range versionsFromReleaseBodyRegex(agaveReleases, regex) {
+	for _, agaveVersionString := range versionsFromReleaseBodyRegexWithPrerelease(agaveReleases, regex, includePrereleases) {
 		key, err := versionKey(agaveVersionString)
 		if err != nil {
 			log.Debug("skipping unparsable agave release version", "version", agaveVersionString, "error", err)
@@ -841,7 +846,7 @@ func jitoVersionStringsFromAgaveReleaseBodyRegex(jitoReleases []*github.Reposito
 	}
 
 	for _, release := range jitoReleases {
-		if release.GetPrerelease() {
+		if release.GetPrerelease() && !includePrereleases {
 			log.Debug("skipping github pre-release", "title", release.GetName(), "tag", release.GetTagName())
 			continue
 		}
