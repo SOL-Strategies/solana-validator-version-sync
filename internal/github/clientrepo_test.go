@@ -960,6 +960,69 @@ func TestHasTaggedVersion_JitoSolanaCachesMatchingTag(t *testing.T) {
 	}
 }
 
+func TestGetLatestClientVersion_JitoSolanaIncludesTestnetPrereleases(t *testing.T) {
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			var body string
+			switch r.URL.Path {
+			case "/repos/jito-foundation/jito-solana/releases":
+				body = `[
+					{"name":"Mainnet - v4.0.2-jito","tag_name":"v4.0.2-jito","prerelease":false},
+					{"name":"Testnet - v4.1.0-beta.3-jito","tag_name":"v4.1.0-beta.3-jito","prerelease":true},
+					{"name":"Testnet - v4.0.0-jito","tag_name":"v4.0.0-jito","prerelease":false}
+				]`
+			case "/repos/anza-xyz/agave/releases":
+				body = `[
+					{"name":"Release v4.0.2","tag_name":"v4.0.2","body":"This is a stable release suitable for use on Mainnet Beta.","prerelease":false},
+					{"name":"Release v4.1.0-beta.3","tag_name":"v4.1.0-beta.3","body":"This is a Testnet release.","prerelease":true},
+					{"name":"Release v4.0.0","tag_name":"v4.0.0","body":"This is a stable release suitable for Testnet and Devnet.","prerelease":false}
+				]`
+			default:
+				return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
+			}
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    r,
+			}, nil
+		}),
+	}
+
+	ghClient := gogithub.NewClient(httpClient)
+	baseURL, err := url.Parse("https://api.github.test/")
+	if err != nil {
+		t.Fatalf("failed to parse test GitHub API URL: %v", err)
+	}
+	ghClient.BaseURL = baseURL
+
+	client := &Client{
+		clientName: constants.ClientNameJitoSolana,
+		cluster:    constants.ClusterNameTestnet,
+		repoOwner:  "jito-foundation",
+		repoName:   "jito-solana",
+		repoURL:    clientRepoConfigs[constants.ClientNameJitoSolana].URL,
+		client:     ghClient,
+		logger:     log.WithPrefix("test"),
+	}
+
+	got, err := client.GetLatestClientVersion()
+	if err != nil {
+		t.Fatalf("GetLatestClientVersion() error = %v", err)
+	}
+	want, err := goversion.NewVersion("v4.1.0-beta.3")
+	if err != nil {
+		t.Fatalf("failed to parse wanted version: %v", err)
+	}
+	if !got.Equal(want) {
+		t.Fatalf("GetLatestClientVersion() = %q, want %q", got.Original(), want.Original())
+	}
+	if gotTag := client.TagNameForVersion(got); gotTag != "v4.1.0-beta.3-jito" {
+		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v4.1.0-beta.3-jito")
+	}
+}
+
 func TestClientRepoConfigs_JitoSolanaReleaseTitleRegex(t *testing.T) {
 	config := clientRepoConfigs[constants.ClientNameJitoSolana]
 
