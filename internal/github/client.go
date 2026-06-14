@@ -439,11 +439,20 @@ func (c *Client) TagNameForVersion(v *version.Version) string {
 }
 
 // ResolveFiredancerSFDPCompliantVersion maps SFDP Firedancer requirements to
-// actual Firedancer repo tags. SFDP may publish compatibility-shaped versions
-// like 0.101.0-beta.40101, while the repo tag is shaped like v0.1001.40101.
+// actual Firedancer repo tags. Legacy Frankendancer tags encode Agave
+// compatibility in v0.xxx.yyyyy, while native Firedancer v1+ tags do not.
+// SFDP may still publish legacy compatibility-shaped versions like
+// 0.101.0-beta.40101, whose repo tag equivalent is v0.1001.40101.
 func (c *Client) ResolveFiredancerSFDPCompliantVersion(targetVersion *version.Version, minVersion *version.Version, hasMinVersion bool, maxVersion *version.Version, hasMaxVersion bool) (*version.Version, error) {
 	if c.clientName != constants.ClientNameFiredancer {
 		return nil, fmt.Errorf("firedancer SFDP resolver called for client %s", c.clientName)
+	}
+
+	if isNativeFiredancerVersion(targetVersion) {
+		if hasMaxVersion {
+			return nil, fmt.Errorf("native firedancer target %s cannot be evaluated against SFDP max requirement %s", targetVersion.Original(), maxVersion.Original())
+		}
+		return targetVersion, nil
 	}
 
 	targetKey, err := firedancerCompatibilityKey(targetVersion)
@@ -549,6 +558,11 @@ func firedancerCompatibilityKeySatisfies(key int64, minKey int64, hasMinVersion 
 		return false
 	}
 	return true
+}
+
+func isNativeFiredancerVersion(v *version.Version) bool {
+	segments := v.Segments()
+	return len(segments) > 0 && segments[0] >= 1
 }
 
 func firedancerCompatibilityKey(v *version.Version) (int64, error) {

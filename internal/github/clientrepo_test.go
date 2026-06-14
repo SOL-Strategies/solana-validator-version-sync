@@ -563,6 +563,22 @@ func TestResolveFiredancerSFDPCompliantVersion(t *testing.T) {
 			hasMin: true,
 			want:   "v0.1001.40101",
 		},
+		{
+			name:   "keeps native firedancer target when SFDP has legacy frankendancer min",
+			tags:   []string{"v0.1001.40101", "v1.0.0"},
+			target: "v1.0.0",
+			min:    "0.101.0-beta.40101",
+			hasMin: true,
+			want:   "v1.0.0",
+		},
+		{
+			name:      "errors for native firedancer target with explicit max bound",
+			tags:      []string{"v0.1001.40101", "v1.0.0"},
+			target:    "v1.0.0",
+			max:       "0.1001.40101",
+			hasMax:    true,
+			wantError: true,
+		},
 	}
 
 	for _, tt := range tests {
