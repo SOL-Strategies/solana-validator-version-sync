@@ -53,6 +53,7 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+wip/
 
 # Local agent/editor state
 .codex

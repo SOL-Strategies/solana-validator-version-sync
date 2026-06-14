@@ -551,11 +551,23 @@ func TestFiredancerVersionStringsByClusterIncludesMainnetSuitableTestnetRelease(
 			Body:       github.String(mainnetSuitableNotes),
 			Prerelease: github.Bool(true),
 		},
+		{
+			Name:       github.String("Frankendancer Testnet v0.1002.40103"),
+			TagName:    github.String("v0.1002.40103"),
+			Body:       github.String("This is a Testnet release."),
+			Prerelease: github.Bool(true),
+		},
+		{
+			Name:       github.String("Firedancer Testnet v1.0.0"),
+			TagName:    github.String("v1.0.0"),
+			Body:       github.String("This is a Testnet release."),
+			Prerelease: github.Bool(true),
+		},
 	}
 
 	got := client.firedancerVersionStringsByCluster(releases)
 	assertVersionStringsEqual(t, got[constants.ClusterNameMainnetBeta], []string{"v0.822.30114", "v0.909.40001"})
-	assertVersionStringsEqual(t, got[constants.ClusterNameTestnet], []string{"v0.909.40001", "v0.910.40002", "v0.1001.40101", "v0.911.40003"})
+	assertVersionStringsEqual(t, got[constants.ClusterNameTestnet], []string{"v0.909.40001", "v0.910.40002", "v0.1001.40101", "v0.911.40003", "v0.1002.40103", "v1.0.0"})
 
 	latestMainnet, err := client.latestVersionFromClusterVersionStrings(got)
 	if err != nil {
@@ -563,6 +575,21 @@ func TestFiredancerVersionStringsByClusterIncludesMainnetSuitableTestnetRelease(
 	}
 	if latestMainnet.Original() != "v0.909.40001" {
 		t.Errorf("latestVersionFromClusterVersionStrings() = %q, want %q", latestMainnet.Original(), "v0.909.40001")
+	}
+
+	testnetClient, err := NewClient(Options{
+		Cluster: constants.ClusterNameTestnet,
+		Client:  constants.ClientNameFiredancer,
+	})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	latestTestnet, err := testnetClient.latestVersionFromClusterVersionStrings(got)
+	if err != nil {
+		t.Fatalf("latestVersionFromClusterVersionStrings() error = %v", err)
+	}
+	if latestTestnet.Original() != "v1.0.0" {
+		t.Errorf("latestVersionFromClusterVersionStrings() = %q, want %q", latestTestnet.Original(), "v1.0.0")
 	}
 }
 
