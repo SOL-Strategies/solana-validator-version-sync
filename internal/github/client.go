@@ -135,7 +135,7 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 		versionStrings := make(map[string][]string)
 		// agave flag release cluster in release notes
 		for _, cluster := range constants.ValidClusterNames {
-			versionStrings[cluster] = versionsFromReleaseBodyRegex(releases, c.releaseNotesRegexes[cluster])
+			versionStrings[cluster] = versionsFromReleaseBodyRegexWithPrerelease(releases, c.releaseNotesRegexes[cluster], true)
 		}
 		return c.latestVersionFromClusterVersionStrings(versionStrings)
 	case constants.ClientNameJitoSolana:
@@ -209,7 +209,7 @@ func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion 
 			jitoReleases,
 			agaveReleases,
 			agaveReleaseNotesRegex,
-			cluster == constants.ClusterNameTestnet,
+			true,
 		)
 	}
 
