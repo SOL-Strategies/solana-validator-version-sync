@@ -169,7 +169,7 @@ func (c *Client) firedancerVersionStringsByCluster(releases []*github.Repository
 	if testnetTitleRegex != nil && mainnetNotesRegex != nil {
 		versionStrings[constants.ClusterNameMainnetBeta] = appendUniqueVersionStrings(
 			versionStrings[constants.ClusterNameMainnetBeta],
-			versionsFromReleaseTitleAndBodyRegex(releases, testnetTitleRegex, mainnetNotesRegex)...,
+			versionsFromReleaseTitleAndBodyRegexWithPrerelease(releases, testnetTitleRegex, mainnetNotesRegex, true)...,
 		)
 	}
 
@@ -791,8 +791,12 @@ func versionsFromReleaseTitleRegexWithPrerelease(releases []*github.RepositoryRe
 }
 
 func versionsFromReleaseTitleAndBodyRegex(releases []*github.RepositoryRelease, titleRegex *regexp.Regexp, bodyRegex *regexp.Regexp) (versionStrings []string) {
+	return versionsFromReleaseTitleAndBodyRegexWithPrerelease(releases, titleRegex, bodyRegex, false)
+}
+
+func versionsFromReleaseTitleAndBodyRegexWithPrerelease(releases []*github.RepositoryRelease, titleRegex *regexp.Regexp, bodyRegex *regexp.Regexp, includePrereleases bool) (versionStrings []string) {
 	for _, release := range releases {
-		if release.GetPrerelease() {
+		if release.GetPrerelease() && !includePrereleases {
 			log.Debug("skipping github pre-release", "title", release.GetName(), "tag", release.GetTagName())
 			continue
 		}

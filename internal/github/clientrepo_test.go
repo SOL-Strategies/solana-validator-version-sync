@@ -1100,6 +1100,54 @@ func TestGetLatestClientVersion_JitoSolanaIncludesMainnetPrereleaseUpgradeCandid
 	}
 }
 
+func TestGetLatestClientVersion_FiredancerIncludesMainnetSuitablePrerelease(t *testing.T) {
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Path != "/repos/firedancer-io/firedancer/releases" {
+				return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
+			}
+
+			body := `[
+				{"name":"Frankendancer Mainnet v0.909.40001","tag_name":"v0.909.40001","body":"This is a mainnet release.","prerelease":false},
+				{"name":"Frankendancer Testnet v0.1002.40103","tag_name":"v0.1002.40103","body":"This is a Testnet release.","prerelease":true},
+				{"name":"Frankendancer Testnet v0.1004.40101","tag_name":"v0.1004.40101","body":"This is a Testnet release. It may also be used on mainnet with a small amount of stake in accordance with Anza's guidelines for v4.1.0-rc.1.","prerelease":true}
+			]`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    r,
+			}, nil
+		}),
+	}
+
+	client, err := NewClient(Options{
+		Cluster: constants.ClusterNameMainnetBeta,
+		Client:  constants.ClientNameFiredancer,
+	})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	ghClient := gogithub.NewClient(httpClient)
+	baseURL, err := url.Parse("https://api.github.test/")
+	if err != nil {
+		t.Fatalf("failed to parse test GitHub API URL: %v", err)
+	}
+	ghClient.BaseURL = baseURL
+	client.client = ghClient
+
+	got, err := client.GetLatestClientVersion()
+	if err != nil {
+		t.Fatalf("GetLatestClientVersion() error = %v", err)
+	}
+	if got.Original() != "v0.1004.40101" {
+		t.Fatalf("GetLatestClientVersion() = %q, want %q", got.Original(), "v0.1004.40101")
+	}
+	if gotTag := client.TagNameForVersion(got); gotTag != "v0.1004.40101" {
+		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v0.1004.40101")
+	}
+}
+
 func TestClientRepoConfigs_JitoSolanaReleaseTitleRegex(t *testing.T) {
 	config := clientRepoConfigs[constants.ClientNameJitoSolana]
 
