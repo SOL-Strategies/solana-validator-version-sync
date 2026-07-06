@@ -487,33 +487,33 @@ func (c *Client) ResolveFiredancerSFDPCompliantVersion(targetVersion *version.Ve
 		return targetVersion, nil
 	}
 
-	targetKey, err := firedancerCompatibilityKey(targetVersion)
+	targetKey, err := firedancerCompatibilityVersionKey(targetVersion)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse firedancer target compatibility key from %s: %w", targetVersion.Original(), err)
+		return nil, fmt.Errorf("failed to parse firedancer target compatibility version key from %s: %w", targetVersion.Original(), err)
 	}
 
-	var minKey int64
+	var minKey firedancerCompatibilityKeyTuple
 	if hasMinVersion {
-		minKey, err = firedancerCompatibilityKey(minVersion)
+		minKey, err = firedancerCompatibilityVersionKey(minVersion)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse firedancer SFDP min compatibility key from %s: %w", minVersion.Original(), err)
+			return nil, fmt.Errorf("failed to parse firedancer SFDP min compatibility version key from %s: %w", minVersion.Original(), err)
 		}
 	}
 
-	var maxKey int64
+	var maxKey firedancerCompatibilityKeyTuple
 	if hasMaxVersion {
-		maxKey, err = firedancerCompatibilityKey(maxVersion)
+		maxKey, err = firedancerCompatibilityVersionKey(maxVersion)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse firedancer SFDP max compatibility key from %s: %w", maxVersion.Original(), err)
+			return nil, fmt.Errorf("failed to parse firedancer SFDP max compatibility version key from %s: %w", maxVersion.Original(), err)
 		}
 	}
 
-	if firedancerCompatibilityKeySatisfies(targetKey, minKey, hasMinVersion, maxKey, hasMaxVersion) {
+	if firedancerCompatibilityVersionKeySatisfies(targetKey, minKey, hasMinVersion, maxKey, hasMaxVersion) {
 		return targetVersion, nil
 	}
 
-	preferHighestCompatible := hasMaxVersion && targetKey > maxKey
-	selectedVersion, ok, err := c.selectFiredancerTagByCompatibilityKey(minKey, hasMinVersion, maxKey, hasMaxVersion, preferHighestCompatible)
+	preferHighestCompatible := hasMaxVersion && targetKey.Compare(maxKey) > 0
+	selectedVersion, ok, err := c.selectFiredancerTagByCompatibilityVersionKey(minKey, hasMinVersion, maxKey, hasMaxVersion, preferHighestCompatible)
 	if err != nil {
 		return nil, err
 	}
@@ -524,7 +524,7 @@ func (c *Client) ResolveFiredancerSFDPCompliantVersion(targetVersion *version.Ve
 	return selectedVersion, nil
 }
 
-func (c *Client) selectFiredancerTagByCompatibilityKey(minKey int64, hasMinVersion bool, maxKey int64, hasMaxVersion bool, preferHighestCompatible bool) (*version.Version, bool, error) {
+func (c *Client) selectFiredancerTagByCompatibilityVersionKey(minKey firedancerCompatibilityKeyTuple, hasMinVersion bool, maxKey firedancerCompatibilityKeyTuple, hasMaxVersion bool, preferHighestCompatible bool) (*version.Version, bool, error) {
 	candidates := c.cachedTagInfos
 	if len(candidates) == 0 {
 		candidates = make([]tagVersionInfo, 0, len(c.cachedTagVersions))
@@ -537,22 +537,22 @@ func (c *Client) selectFiredancerTagByCompatibilityKey(minKey int64, hasMinVersi
 	}
 
 	var selected tagVersionInfo
-	var selectedKey int64
+	var selectedKey firedancerCompatibilityKeyTuple
 	for _, candidate := range candidates {
 		if c.cluster == constants.ClusterNameMainnetBeta && candidate.TestnetOnly {
 			continue
 		}
 
-		candidateKey, err := firedancerCompatibilityKey(candidate.Version)
+		candidateKey, err := firedancerCompatibilityVersionKey(candidate.Version)
 		if err != nil {
-			c.logger.Debug("skipping firedancer tag with unparsable compatibility key",
+			c.logger.Debug("skipping firedancer tag with unparsable compatibility version key",
 				"tag", candidate.TagName,
 				"version", candidate.Version.Original(),
 				"error", err,
 			)
 			continue
 		}
-		if !firedancerCompatibilityKeySatisfies(candidateKey, minKey, hasMinVersion, maxKey, hasMaxVersion) {
+		if !firedancerCompatibilityVersionKeySatisfies(candidateKey, minKey, hasMinVersion, maxKey, hasMaxVersion) {
 			continue
 		}
 
@@ -563,14 +563,16 @@ func (c *Client) selectFiredancerTagByCompatibilityKey(minKey int64, hasMinVersi
 		}
 
 		if preferHighestCompatible {
-			if candidateKey > selectedKey || (candidateKey == selectedKey && candidate.Version.GreaterThan(selected.Version)) {
+			keyComparison := candidateKey.Compare(selectedKey)
+			if keyComparison > 0 || (keyComparison == 0 && candidate.Version.GreaterThan(selected.Version)) {
 				selected = candidate
 				selectedKey = candidateKey
 			}
 			continue
 		}
 
-		if candidateKey < selectedKey || (candidateKey == selectedKey && candidate.Version.GreaterThan(selected.Version)) {
+		keyComparison := candidateKey.Compare(selectedKey)
+		if keyComparison < 0 || (keyComparison == 0 && candidate.Version.GreaterThan(selected.Version)) {
 			selected = candidate
 			selectedKey = candidateKey
 		}
@@ -582,6 +584,37 @@ func (c *Client) selectFiredancerTagByCompatibilityKey(minKey int64, hasMinVersi
 	return selected.Version, true, nil
 }
 
+type firedancerCompatibilityKeyTuple struct {
+	train            int64
+	compatibilityKey int64
+}
+
+func (k firedancerCompatibilityKeyTuple) Compare(other firedancerCompatibilityKeyTuple) int {
+	if k.train < other.train {
+		return -1
+	}
+	if k.train > other.train {
+		return 1
+	}
+	if k.compatibilityKey < other.compatibilityKey {
+		return -1
+	}
+	if k.compatibilityKey > other.compatibilityKey {
+		return 1
+	}
+	return 0
+}
+
+func firedancerCompatibilityVersionKeySatisfies(key firedancerCompatibilityKeyTuple, minKey firedancerCompatibilityKeyTuple, hasMinVersion bool, maxKey firedancerCompatibilityKeyTuple, hasMaxVersion bool) bool {
+	if hasMinVersion && key.Compare(minKey) < 0 {
+		return false
+	}
+	if hasMaxVersion && key.Compare(maxKey) > 0 {
+		return false
+	}
+	return true
+}
+
 func firedancerCompatibilityKeySatisfies(key int64, minKey int64, hasMinVersion bool, maxKey int64, hasMaxVersion bool) bool {
 	if hasMinVersion && key < minKey {
 		return false
@@ -590,6 +623,28 @@ func firedancerCompatibilityKeySatisfies(key int64, minKey int64, hasMinVersion 
 		return false
 	}
 	return true
+}
+
+func firedancerCompatibilityVersionKey(v *version.Version) (firedancerCompatibilityKeyTuple, error) {
+	compatibilityKey, err := firedancerCompatibilityKey(v)
+	if err != nil {
+		return firedancerCompatibilityKeyTuple{}, err
+	}
+
+	segments := v.Segments()
+	if len(segments) < 2 {
+		return firedancerCompatibilityKeyTuple{}, fmt.Errorf("version %q has fewer than two segments", v.Original())
+	}
+
+	train := int64(segments[1])
+	if v.Prerelease() != "" && train < 900 {
+		train += 900
+	}
+
+	return firedancerCompatibilityKeyTuple{
+		train:            train,
+		compatibilityKey: compatibilityKey,
+	}, nil
 }
 
 func isNativeFiredancerVersion(v *version.Version) bool {
