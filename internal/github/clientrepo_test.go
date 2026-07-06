@@ -307,6 +307,115 @@ func TestFiredancerCompatibilityKey(t *testing.T) {
 	}
 }
 
+func TestFiredancerCompatibilityVersionKey(t *testing.T) {
+	mustVersion := func(s string) *goversion.Version {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		return v
+	}
+
+	tests := []struct {
+		name              string
+		in                string
+		wantTrain         int64
+		wantCompatibility int64
+	}{
+		{
+			name:              "repo tag uses minor as release train",
+			in:                "v0.1005.40100",
+			wantTrain:         1005,
+			wantCompatibility: 40100,
+		},
+		{
+			name:              "current SFDP rc-shaped min uses minor as release train",
+			in:                "0.1004.0-rc.40101",
+			wantTrain:         1004,
+			wantCompatibility: 40101,
+		},
+		{
+			name:              "legacy SFDP beta-shaped min maps to repo train",
+			in:                "0.101.0-beta.40101",
+			wantTrain:         1001,
+			wantCompatibility: 40101,
+		},
+		{
+			name:              "older RPC beta-shaped version keeps repo train",
+			in:                "0.902.0-beta.40002",
+			wantTrain:         902,
+			wantCompatibility: 40002,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := firedancerCompatibilityVersionKey(mustVersion(tt.in))
+			if err != nil {
+				t.Fatalf("firedancerCompatibilityVersionKey() error = %v", err)
+			}
+			if got.train != tt.wantTrain || got.compatibilityKey != tt.wantCompatibility {
+				t.Errorf("firedancerCompatibilityVersionKey(%q) = {%d %d}, want {%d %d}",
+					tt.in,
+					got.train,
+					got.compatibilityKey,
+					tt.wantTrain,
+					tt.wantCompatibility,
+				)
+			}
+		})
+	}
+}
+
+func TestFiredancerCompatibilityVersionKeyCompare(t *testing.T) {
+	mustKey := func(s string) firedancerCompatibilityKeyTuple {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		key, err := firedancerCompatibilityVersionKey(v)
+		if err != nil {
+			t.Fatalf("firedancerCompatibilityVersionKey(%q) error = %v", s, err)
+		}
+		return key
+	}
+
+	tests := []struct {
+		name string
+		a    string
+		b    string
+		want int
+	}{
+		{
+			name: "newer mainnet train satisfies lower SFDP train despite lower compatibility key",
+			a:    "v0.1005.40100",
+			b:    "0.1004.0-rc.40101",
+			want: 1,
+		},
+		{
+			name: "same train compares by compatibility key",
+			a:    "v0.1004.40101",
+			b:    "0.1004.0-rc.40101",
+			want: 0,
+		},
+		{
+			name: "legacy SFDP beta min maps to matching repo train",
+			a:    "v0.1001.40101",
+			b:    "0.101.0-beta.40101",
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mustKey(tt.a).Compare(mustKey(tt.b))
+			if got != tt.want {
+				t.Errorf("Compare(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeToTagVersion(t *testing.T) {
 	mustVersion := func(s string) *goversion.Version {
 		v, err := goversion.NewVersion(s)
@@ -538,6 +647,14 @@ func TestResolveFiredancerSFDPCompliantVersion(t *testing.T) {
 			min:    "0.101.0-beta.40101",
 			hasMin: true,
 			want:   "v0.1001.40101",
+		},
+		{
+			name:   "keeps newer mainnet train when SFDP min has higher compatibility key on older train",
+			tags:   []string{"v0.1004.40101", "v0.1005.40100"},
+			target: "v0.1005.40100",
+			min:    "0.1004.0-rc.40101",
+			hasMin: true,
+			want:   "v0.1005.40100",
 		},
 		{
 			name:      "errors when no cached repo tag satisfies min",
