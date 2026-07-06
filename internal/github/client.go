@@ -159,7 +159,27 @@ func (c *Client) firedancerVersionStringsByCluster(releases []*github.Repository
 	versionStrings := make(map[string][]string)
 	// Firedancer usually flags release cluster in the release title prefix.
 	for _, cluster := range constants.ValidClusterNames {
-		versionStrings[cluster] = versionsFromReleaseTitleRegexWithPrerelease(releases, c.releaseTitleRegexes[cluster], cluster == constants.ClusterNameTestnet)
+		includePrereleases := cluster == constants.ClusterNameTestnet
+		for _, release := range releases {
+			if release.GetPrerelease() && !includePrereleases {
+				c.logger.Debug("skipping firedancer pre-release for cluster classification",
+					"cluster", cluster,
+					"title", release.GetName(),
+					"tag", release.GetTagName(),
+					"prerelease", release.GetPrerelease(),
+				)
+				continue
+			}
+			if c.releaseTitleRegexes[cluster].MatchString(release.GetName()) {
+				c.logger.Debug("classified firedancer release by title",
+					"cluster", cluster,
+					"title", release.GetName(),
+					"tag", release.GetTagName(),
+					"prerelease", release.GetPrerelease(),
+				)
+				versionStrings[cluster] = append(versionStrings[cluster], release.GetTagName())
+			}
+		}
 	}
 
 	// Some Testnet-titled Frankendancer releases are explicitly suitable for
@@ -167,9 +187,21 @@ func (c *Client) firedancerVersionStringsByCluster(releases []*github.Repository
 	testnetTitleRegex := c.releaseTitleRegexes[constants.ClusterNameTestnet]
 	mainnetNotesRegex := c.releaseNotesRegexes[constants.ClusterNameMainnetBeta]
 	if testnetTitleRegex != nil && mainnetNotesRegex != nil {
+		mainnetSuitableTestnetVersions := make([]string, 0)
+		for _, release := range releases {
+			if testnetTitleRegex.MatchString(release.GetName()) && mainnetNotesRegex.MatchString(release.GetBody()) {
+				c.logger.Debug("promoting firedancer testnet release to mainnet by release notes",
+					"cluster", constants.ClusterNameMainnetBeta,
+					"title", release.GetName(),
+					"tag", release.GetTagName(),
+					"prerelease", release.GetPrerelease(),
+				)
+				mainnetSuitableTestnetVersions = append(mainnetSuitableTestnetVersions, release.GetTagName())
+			}
+		}
 		versionStrings[constants.ClusterNameMainnetBeta] = appendUniqueVersionStrings(
 			versionStrings[constants.ClusterNameMainnetBeta],
-			versionsFromReleaseTitleAndBodyRegexWithPrerelease(releases, testnetTitleRegex, mainnetNotesRegex, true)...,
+			mainnetSuitableTestnetVersions...,
 		)
 	}
 
