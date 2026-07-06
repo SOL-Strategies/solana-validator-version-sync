@@ -1108,6 +1108,7 @@ func TestGetLatestClientVersion_FiredancerIncludesMainnetSuitablePrerelease(t *t
 			}
 
 			body := `[
+				{"name":"Frankendancer Mainnet v0.1005.40100","tag_name":"v0.1005.40100","body":"This is a mainnet ready release.","prerelease":false},
 				{"name":"Frankendancer Mainnet v0.909.40001","tag_name":"v0.909.40001","body":"This is a mainnet release.","prerelease":false},
 				{"name":"Frankendancer Testnet v0.1002.40103","tag_name":"v0.1002.40103","body":"This is a Testnet release.","prerelease":true},
 				{"name":"Frankendancer Testnet v0.1004.40101","tag_name":"v0.1004.40101","body":"This is a Testnet release. It may also be used on mainnet with a small amount of stake in accordance with Anza's guidelines for v4.1.0-rc.1.","prerelease":true}
@@ -1140,11 +1141,11 @@ func TestGetLatestClientVersion_FiredancerIncludesMainnetSuitablePrerelease(t *t
 	if err != nil {
 		t.Fatalf("GetLatestClientVersion() error = %v", err)
 	}
-	if got.Original() != "v0.1004.40101" {
-		t.Fatalf("GetLatestClientVersion() = %q, want %q", got.Original(), "v0.1004.40101")
+	if got.Original() != "v0.1005.40100" {
+		t.Fatalf("GetLatestClientVersion() = %q, want %q", got.Original(), "v0.1005.40100")
 	}
-	if gotTag := client.TagNameForVersion(got); gotTag != "v0.1004.40101" {
-		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v0.1004.40101")
+	if gotTag := client.TagNameForVersion(got); gotTag != "v0.1005.40100" {
+		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v0.1005.40100")
 	}
 }
 
