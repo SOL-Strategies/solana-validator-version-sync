@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/charmbracelet/log"
 	"github.com/google/go-github/v74/github"
 	"github.com/hashicorp/go-version"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/constants"
@@ -541,6 +542,120 @@ func TestAgaveReleaseNotesRegexes(t *testing.T) {
 	}
 }
 
+func TestAgaveVersionStringsByClusterIncludesStablePatchReleasesWithoutClusterNotes(t *testing.T) {
+	client, err := NewClient(Options{
+		Cluster: constants.ClusterNameMainnetBeta,
+		Client:  constants.ClientNameAgave,
+	})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	releases := []*github.RepositoryRelease{
+		{
+			Name:    github.String("Release v4.2.0-beta.1"),
+			Body:    github.String("## What's Changed"),
+			TagName: github.String("v4.2.0-beta.1"),
+		},
+		{
+			Name:    github.String("Release v4.1.2"),
+			Body:    github.String("## What's Changed\n\n* v4.1: transaction-scheduler backport"),
+			TagName: github.String("v4.1.2"),
+		},
+		{
+			Name:    github.String("Release v4.1.1"),
+			Body:    github.String("## What's Changed\n\n* v4.1: nonce-size backport"),
+			TagName: github.String("v4.1.1"),
+		},
+		{
+			Name:    github.String("Release v4.1.0"),
+			Body:    github.String("This a stable release suitable for Testnet, Devnet and Mainnet Beta."),
+			TagName: github.String("v4.1.0"),
+		},
+		{
+			Name:       github.String("Release v4.1.0-rc.1"),
+			Body:       github.String("Mainnet Upgrade Candidate. It is also recommended for Testnet and Devnet."),
+			TagName:    github.String("v4.1.0-rc.1"),
+			Prerelease: github.Bool(true),
+		},
+		{
+			Name:       github.String("Release v4.2.0-beta.0"),
+			Body:       github.String("This is a testnet release."),
+			TagName:    github.String("v4.2.0-beta.0"),
+			Prerelease: github.Bool(true),
+		},
+	}
+
+	versionStrings := agaveVersionStringsByCluster(releases, client.releaseNotesRegexes, client.logger)
+
+	assertVersionStringsEqual(t, versionStrings[constants.ClusterNameMainnetBeta], []string{
+		"v4.1.0",
+		"v4.1.0-rc.1",
+		"v4.1.2",
+		"v4.1.1",
+	})
+
+	got, err := client.latestVersionFromClusterVersionStrings(versionStrings)
+	if err != nil {
+		t.Fatalf("latestVersionFromClusterVersionStrings() error = %v", err)
+	}
+	want, err := version.NewVersion("v4.1.2")
+	if err != nil {
+		t.Fatalf("failed to parse wanted version: %v", err)
+	}
+	if !got.Equal(want) {
+		t.Fatalf("latestVersionFromClusterVersionStrings() = %q, want %q", got.Original(), want.Original())
+	}
+}
+
+func TestAgaveVersionStringsByClusterDoesNotFallbackTestnetOnlyOrPrereleaseTags(t *testing.T) {
+	client, err := NewClient(Options{
+		Cluster: constants.ClusterNameMainnetBeta,
+		Client:  constants.ClientNameAgave,
+	})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	releases := []*github.RepositoryRelease{
+		{
+			Name:    github.String("Release v4.1.0"),
+			Body:    github.String("This is a stable release suitable for Testnet and Devnet."),
+			TagName: github.String("v4.1.0"),
+		},
+		{
+			Name:       github.String("Release v4.2.0-beta.1"),
+			Body:       github.String("## What's Changed"),
+			TagName:    github.String("v4.2.0-beta.1"),
+			Prerelease: github.Bool(true),
+		},
+		{
+			Name:       github.String("Release v4.3.0-alpha.1"),
+			Body:       github.String("## What's Changed"),
+			TagName:    github.String("v4.3.0-alpha.1"),
+			Prerelease: github.Bool(true),
+		},
+		{
+			Name:    github.String("Release v4.0.3"),
+			Body:    github.String("This a stable release."),
+			TagName: github.String("v4.0.3"),
+		},
+		{
+			Name:       github.String("Release v4.0.4-beta.0"),
+			Body:       github.String("Mainnet Upgrade Candidate. It is also recommended for Testnet and Devnet."),
+			TagName:    github.String("v4.0.4-beta.0"),
+			Prerelease: github.Bool(true),
+		},
+	}
+
+	versionStrings := agaveVersionStringsByCluster(releases, client.releaseNotesRegexes, client.logger)
+
+	assertVersionStringsEqual(t, versionStrings[constants.ClusterNameMainnetBeta], []string{
+		"v4.0.3",
+		"v4.0.4-beta.0",
+	})
+}
+
 func TestFiredancerVersionStringsByClusterIncludesMainnetSuitableTestnetRelease(t *testing.T) {
 	client, err := NewClient(Options{
 		Cluster: constants.ClusterNameMainnetBeta,
@@ -749,7 +864,7 @@ func TestClientLatestJitoVersionFromClusterVersionStringsPrefersStableV4OverRele
 	}
 }
 
-func TestJitoVersionStringsFromAgaveReleaseBodyRegex(t *testing.T) {
+func TestJitoVersionStringsFromAgaveVersionStrings(t *testing.T) {
 	mainnetRegex := regexp.MustCompile(clientRepoConfigs[constants.ClientNameAgave].ReleaseNotesRegexes[constants.ClusterNameMainnetBeta])
 	testnetRegex := regexp.MustCompile(clientRepoConfigs[constants.ClientNameAgave].ReleaseNotesRegexes[constants.ClusterNameTestnet])
 
@@ -846,44 +961,49 @@ func TestJitoVersionStringsFromAgaveReleaseBodyRegex(t *testing.T) {
 
 	tests := []struct {
 		name               string
-		regex              *regexp.Regexp
+		cluster            string
 		includePrereleases bool
 		want               []string
 	}{
 		{
-			name:  "mainnet release matches agave mainnet classification",
-			regex: mainnetRegex,
-			want:  []string{"v3.1.14-jito", "v4.0.0-rc.0-jito", "v4.0.0-jito", "v4.0.1-jito", "v3.0.6-jito.1"},
+			name:    "mainnet release matches agave mainnet classification",
+			cluster: constants.ClusterNameMainnetBeta,
+			want:    []string{"v3.1.14-jito", "v4.0.0-rc.0-jito", "v4.0.0-jito", "v4.0.1-jito", "v3.0.6-jito.1"},
 		},
 		{
 			name:               "mainnet release includes prerelease jito tag from agave classification",
-			regex:              mainnetRegex,
+			cluster:            constants.ClusterNameMainnetBeta,
 			includePrereleases: true,
 			want:               []string{"v3.1.14-jito", "v4.0.0-rc.0-jito", "v4.1.0-rc.1-jito", "v4.0.0-jito", "v4.0.1-jito", "v3.0.6-jito.1", "v3.1.15-jito"},
 		},
 		{
-			name:  "testnet release excludes prereleases by default",
-			regex: testnetRegex,
-			want:  []string{"v4.0.0-beta.2-jito", "v4.0.0-rc.0-jito"},
+			name:    "testnet release excludes prereleases by default",
+			cluster: constants.ClusterNameTestnet,
+			want:    []string{"v4.0.0-beta.2-jito", "v4.0.0-rc.0-jito"},
 		},
 		{
 			name:               "testnet release includes prereleases when requested",
-			regex:              testnetRegex,
+			cluster:            constants.ClusterNameTestnet,
 			includePrereleases: true,
 			want:               []string{"v4.0.0-beta.2-jito", "v4.0.0-rc.0-jito", "v4.1.0-beta.3-jito", "v4.1.0-rc.1-jito"},
 		},
 	}
 
+	agaveVersionStrings := agaveVersionStringsByCluster(agaveReleases, map[string]*regexp.Regexp{
+		constants.ClusterNameMainnetBeta: mainnetRegex,
+		constants.ClusterNameTestnet:     testnetRegex,
+	}, log.WithPrefix("test"))
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := jitoVersionStringsFromAgaveReleaseBodyRegex(jitoReleases, agaveReleases, tt.regex, tt.includePrereleases)
+			got := jitoVersionStringsFromAgaveVersionStrings(jitoReleases, agaveVersionStrings[tt.cluster], tt.includePrereleases)
 			if len(got) != len(tt.want) {
-				t.Fatalf("jitoVersionStringsFromAgaveReleaseBodyRegex() returned %d versions, want %d: got %v", len(got), len(tt.want), got)
+				t.Fatalf("jitoVersionStringsFromAgaveVersionStrings() returned %d versions, want %d: got %v", len(got), len(tt.want), got)
 			}
 
 			for i := range tt.want {
 				if got[i] != tt.want[i] {
-					t.Errorf("jitoVersionStringsFromAgaveReleaseBodyRegex()[%d] = %q, want %q", i, got[i], tt.want[i])
+					t.Errorf("jitoVersionStringsFromAgaveVersionStrings()[%d] = %q, want %q", i, got[i], tt.want[i])
 				}
 			}
 		})
