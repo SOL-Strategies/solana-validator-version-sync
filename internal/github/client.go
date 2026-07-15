@@ -214,6 +214,11 @@ func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion 
 		return nil, fmt.Errorf("failed to get jito-solana releases: %w", err)
 	}
 
+	versionStrings, err := jitoVersionStringsByCluster(jitoReleases, c.logger)
+	if err != nil {
+		return nil, err
+	}
+
 	agaveOwner, agaveRepo, err := ownerAndRepoFromURL(clientRepoConfigs[constants.ClientNameAgave].URL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract agave owner/repo from URL: %w", err)
@@ -226,10 +231,8 @@ func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion 
 		return nil, fmt.Errorf("failed to get agave releases for jito-solana classification: %w", err)
 	}
 
-	versionStrings := make(map[string][]string)
-	// jito-solana tags are Agave versions with a -jito suffix. Classify the
-	// underlying Agave version from Agave releases, then map back to the
-	// matching Jito release tag so title prefixes are not required.
+	// Also keep the Agave-derived mapping for releases that are intentionally
+	// promoted across clusters by upstream Agave notes.
 	agaveReleaseNotesRegexes := make(map[string]*regexp.Regexp)
 	for _, cluster := range constants.ValidClusterNames {
 		agaveReleaseNotesRegex, err := regexp.Compile(clientRepoConfigs[constants.ClientNameAgave].ReleaseNotesRegexes[cluster])
@@ -241,11 +244,11 @@ func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion 
 
 	agaveVersionStrings := agaveVersionStringsByCluster(agaveReleases, agaveReleaseNotesRegexes, c.logger)
 	for _, cluster := range constants.ValidClusterNames {
-		versionStrings[cluster] = jitoVersionStringsFromAgaveVersionStrings(
+		versionStrings[cluster] = appendUniqueVersionStrings(versionStrings[cluster], jitoVersionStringsFromAgaveVersionStrings(
 			jitoReleases,
 			agaveVersionStrings[cluster],
 			true,
-		)
+		)...)
 	}
 
 	return c.latestVersionFromClusterVersionStrings(versionStrings)
@@ -977,7 +980,65 @@ func agaveVersionStringsByCluster(releases []*github.RepositoryRelease, releaseN
 		)
 	}
 
+	for _, release := range releases {
+		tagName := release.GetTagName()
+		if !release.GetPrerelease() || !isAgaveTestnetPrereleaseFallback(tagName) {
+			continue
+		}
+		body := release.GetBody()
+		if testnetRegex.MatchString(body) || mainnetRegex.MatchString(body) {
+			continue
+		}
+
+		if logger != nil {
+			logger.Debug("classified agave testnet prerelease by tag fallback",
+				"cluster", constants.ClusterNameTestnet,
+				"title", release.GetName(),
+				"tag", tagName,
+			)
+		}
+		versionStrings[constants.ClusterNameTestnet] = appendUniqueVersionStrings(
+			versionStrings[constants.ClusterNameTestnet],
+			tagName,
+		)
+	}
+
 	return versionStrings
+}
+
+func isAgaveTestnetPrereleaseFallback(tagName string) bool {
+	parsedVersion, err := version.NewVersion(tagName)
+	if err != nil {
+		return false
+	}
+
+	prerelease := parsedVersion.Prerelease()
+	if prerelease == "" {
+		return false
+	}
+
+	prereleaseType := strings.ToLower(strings.Split(prerelease, ".")[0])
+	return prereleaseType == "beta" || prereleaseType == "rc"
+}
+
+func jitoVersionStringsByCluster(releases []*github.RepositoryRelease, logger *log.Logger) (map[string][]string, error) {
+	versionStrings := make(map[string][]string)
+	for _, cluster := range constants.ValidClusterNames {
+		titleRegex, err := regexp.Compile(clientRepoConfigs[constants.ClientNameJitoSolana].ReleaseTitleRegexes[cluster])
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile jito-solana release title regex for %s: %w", cluster, err)
+		}
+
+		versionStrings[cluster] = versionsFromReleaseTitleRegexWithPrerelease(releases, titleRegex, true)
+		if logger != nil {
+			logger.Debug("classified jito-solana releases by title",
+				"cluster", cluster,
+				"versions", versionStrings[cluster],
+			)
+		}
+	}
+
+	return versionStrings, nil
 }
 
 func jitoVersionStringsFromAgaveVersionStrings(jitoReleases []*github.RepositoryRelease, agaveVersionStrings []string, includePrereleases bool) (versionStrings []string) {
