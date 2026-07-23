@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gagliardetto/solana-go"
+	goversion "github.com/hashicorp/go-version"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/config"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/constants"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/sync_commands"
@@ -45,6 +46,74 @@ func TestOptions_StructFields(t *testing.T) {
 	}
 	if opts.ValidatorConfig.RPCURL != "http://localhost:8899" {
 		t.Errorf("Expected RPCURL to be http://localhost:8899, got %s", opts.ValidatorConfig.RPCURL)
+	}
+}
+
+func TestSelectSFDPCompliantVersion(t *testing.T) {
+	mustVersion := func(s string) *goversion.Version {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		return v
+	}
+
+	tests := []struct {
+		name   string
+		target string
+		min    string
+		hasMin bool
+		max    string
+		hasMax bool
+		want   string
+	}{
+		{
+			name:   "target above prerelease max uses exact max",
+			target: "v4.3.0-alpha.1",
+			max:    "v4.2.0-beta.2",
+			hasMax: true,
+			want:   "v4.2.0-beta.2",
+		},
+		{
+			name:   "target below prerelease min uses exact min",
+			target: "v4.2.0-beta.0",
+			min:    "v4.2.0-beta.2",
+			hasMin: true,
+			want:   "v4.2.0-beta.2",
+		},
+		{
+			name:   "target within prerelease bounds is unchanged",
+			target: "v4.2.0-beta.2",
+			min:    "v4.2.0-beta.1",
+			hasMin: true,
+			max:    "v4.2.0-beta.3",
+			hasMax: true,
+			want:   "v4.2.0-beta.2",
+		},
+		{
+			name:   "no bounds returns target",
+			target: "v4.3.0-alpha.1",
+			want:   "v4.3.0-alpha.1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var minVersion *goversion.Version
+			if tt.hasMin {
+				minVersion = mustVersion(tt.min)
+			}
+			var maxVersion *goversion.Version
+			if tt.hasMax {
+				maxVersion = mustVersion(tt.max)
+			}
+
+			got := selectSFDPCompliantVersion(mustVersion(tt.target), minVersion, tt.hasMin, maxVersion, tt.hasMax)
+			want := mustVersion(tt.want)
+			if !got.Equal(want) {
+				t.Fatalf("selectSFDPCompliantVersion() = %q, want %q", got.Original(), want.Original())
+			}
+		})
 	}
 }
 

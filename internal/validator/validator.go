@@ -312,36 +312,50 @@ func (v *Validator) getSFDPCompliantVersion(targetVersion *version.Version) (sfd
 		return sfdpCompliantVersion, nil
 	}
 
-	// target version is within SFDP constraints
-	if sfdpRequirements.Constraints.Check(targetVersion.Core()) {
+	sfdpCompliantVersion = selectSFDPCompliantVersion(
+		targetVersion,
+		sfdpRequirements.MinVersion,
+		sfdpRequirements.HasMinVersion,
+		sfdpRequirements.MaxVersion,
+		sfdpRequirements.HasMaxVersion,
+	)
+
+	if sfdpCompliantVersion.Equal(targetVersion) {
 		v.logger.Info("target version is within SFDP constraints",
 			"targetVersion", targetVersion.Original(),
 			"sfdpRequirement", sfdpRequirements.Constraints.String(),
 		)
-		sfdpCompliantVersion = targetVersion
+		return sfdpCompliantVersion, nil
 	}
 
-	// SFDP has max version and target repo, if targetVersion is above it, return the max allowed by SFDP
-	if sfdpRequirements.HasMaxVersion && targetVersion.Core().Compare(sfdpRequirements.MaxVersion.Core()) > 0 {
+	if sfdpRequirements.HasMaxVersion && sfdpCompliantVersion.Equal(sfdpRequirements.MaxVersion) {
 		v.logger.Warn("target version is greater than max allowed SFDP version - updating to max allowed SFDP version",
 			"targetVersion", targetVersion.Original(),
 			"sfdpMaxVersion", sfdpRequirements.MaxVersion.String(),
 			"sfdpRequirement", sfdpRequirements.Constraints.String(),
 		)
-		sfdpCompliantVersion = sfdpRequirements.MaxVersion
+		return sfdpCompliantVersion, nil
 	}
 
-	// SFDP has min version and target repo, if targetVersion is below it, return the min allowed by SFDP
-	if sfdpRequirements.HasMinVersion && targetVersion.Core().Compare(sfdpRequirements.MinVersion.Core()) < 0 {
+	if sfdpRequirements.HasMinVersion && sfdpCompliantVersion.Equal(sfdpRequirements.MinVersion) {
 		v.logger.Warn("target version is not within SFDP constraints - updating to min allowed SFDP version",
 			"targetVersion", targetVersion.Original(),
 			"sfdpMinVersion", sfdpRequirements.MinVersion.String(),
 			"sfdpRequirement", sfdpRequirements.Constraints.String(),
 		)
-		sfdpCompliantVersion = sfdpRequirements.MinVersion
 	}
 
 	return sfdpCompliantVersion, nil
+}
+
+func selectSFDPCompliantVersion(targetVersion *version.Version, minVersion *version.Version, hasMinVersion bool, maxVersion *version.Version, hasMaxVersion bool) *version.Version {
+	if hasMaxVersion && targetVersion.Compare(maxVersion) > 0 {
+		return maxVersion
+	}
+	if hasMinVersion && targetVersion.Compare(minVersion) < 0 {
+		return minVersion
+	}
+	return targetVersion
 }
 
 // refreshState refreshes the validator's state

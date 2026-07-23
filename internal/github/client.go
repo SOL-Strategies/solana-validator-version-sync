@@ -244,11 +244,14 @@ func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion 
 
 	agaveVersionStrings := agaveVersionStringsByCluster(agaveReleases, agaveReleaseNotesRegexes, c.logger)
 	for _, cluster := range constants.ValidClusterNames {
-		versionStrings[cluster] = appendUniqueVersionStrings(versionStrings[cluster], jitoVersionStringsFromAgaveVersionStrings(
+		if len(versionStrings[cluster]) > 0 {
+			continue
+		}
+		versionStrings[cluster] = jitoVersionStringsFromAgaveVersionStrings(
 			jitoReleases,
 			agaveVersionStrings[cluster],
 			true,
-		)...)
+		)
 	}
 
 	return c.latestVersionFromClusterVersionStrings(versionStrings)
@@ -416,8 +419,13 @@ func (c *Client) HasTaggedVersion(testVersion *version.Version) (hasTaggedVersio
 			return false, fmt.Errorf("failed to parse tag version: %w", err)
 		}
 
-		c.logger.Debug("comparing tag version to test version", "tagVersion", tagVersion.Core().String(), "testVersion", testVersion.Core().String())
-		// testVersion exists so return true
+		c.logger.Debug("comparing tag version to test version", "tagVersion", tagVersion.Original(), "testVersion", testVersion.Original())
+		if testVersion.Prerelease() != "" {
+			if tagVersion.Equal(testVersion) {
+				return true, nil
+			}
+			continue
+		}
 		if tagVersion.Core().Compare(testVersion.Core()) == 0 {
 			return true, nil
 		}
@@ -980,45 +988,7 @@ func agaveVersionStringsByCluster(releases []*github.RepositoryRelease, releaseN
 		)
 	}
 
-	for _, release := range releases {
-		tagName := release.GetTagName()
-		if !release.GetPrerelease() || !isAgaveTestnetPrereleaseFallback(tagName) {
-			continue
-		}
-		body := release.GetBody()
-		if testnetRegex.MatchString(body) || mainnetRegex.MatchString(body) {
-			continue
-		}
-
-		if logger != nil {
-			logger.Debug("classified agave testnet prerelease by tag fallback",
-				"cluster", constants.ClusterNameTestnet,
-				"title", release.GetName(),
-				"tag", tagName,
-			)
-		}
-		versionStrings[constants.ClusterNameTestnet] = appendUniqueVersionStrings(
-			versionStrings[constants.ClusterNameTestnet],
-			tagName,
-		)
-	}
-
 	return versionStrings
-}
-
-func isAgaveTestnetPrereleaseFallback(tagName string) bool {
-	parsedVersion, err := version.NewVersion(tagName)
-	if err != nil {
-		return false
-	}
-
-	prerelease := parsedVersion.Prerelease()
-	if prerelease == "" {
-		return false
-	}
-
-	prereleaseType := strings.ToLower(strings.Split(prerelease, ".")[0])
-	return prereleaseType == "beta" || prereleaseType == "rc"
 }
 
 func jitoVersionStringsByCluster(releases []*github.RepositoryRelease, logger *log.Logger) (map[string][]string, error) {
