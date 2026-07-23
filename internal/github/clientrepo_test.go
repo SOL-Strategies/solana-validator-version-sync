@@ -1093,6 +1093,61 @@ func TestHasTaggedVersion_JitoSolanaCachesMatchingTag(t *testing.T) {
 	}
 }
 
+func TestHasTaggedVersion_AgavePrereleaseRequiresExactMatch(t *testing.T) {
+	mustVersion := func(s string) *goversion.Version {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		return v
+	}
+
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Path != "/repos/anza-xyz/agave/tags" {
+				return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`[{"name":"v4.2.0-beta.2"},{"name":"v4.1.2"}]`)),
+				Request:    r,
+			}, nil
+		}),
+	}
+
+	ghClient := gogithub.NewClient(httpClient)
+	baseURL, err := url.Parse("https://api.github.test/")
+	if err != nil {
+		t.Fatalf("failed to parse test GitHub API URL: %v", err)
+	}
+	ghClient.BaseURL = baseURL
+
+	client := &Client{
+		clientName: constants.ClientNameAgave,
+		repoOwner:  "anza-xyz",
+		repoName:   "agave",
+		client:     ghClient,
+		logger:     log.WithPrefix("test"),
+	}
+
+	has, err := client.HasTaggedVersion(mustVersion("v4.2.0-beta.1"))
+	if err != nil {
+		t.Fatalf("HasTaggedVersion() error = %v", err)
+	}
+	if has {
+		t.Fatal("HasTaggedVersion() matched prerelease by core version; want exact prerelease match only")
+	}
+
+	has, err = client.HasTaggedVersion(mustVersion("v4.1.2"))
+	if err != nil {
+		t.Fatalf("HasTaggedVersion() error = %v", err)
+	}
+	if !has {
+		t.Fatal("HasTaggedVersion() = false for stable core match, want true")
+	}
+}
+
 func TestGetLatestClientVersion_JitoSolanaIncludesTestnetPrereleases(t *testing.T) {
 	httpClient := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -1219,7 +1274,7 @@ func TestGetLatestClientVersion_JitoSolanaUsesTestnetTitleWhenAgaveNotesOmitClus
 	}
 }
 
-func TestGetLatestClientVersion_JitoSolanaIncludesMainnetPrereleaseUpgradeCandidates(t *testing.T) {
+func TestGetLatestClientVersion_JitoSolanaPrefersMainnetTitleOverAgaveDerivedCandidate(t *testing.T) {
 	httpClient := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			var body string
@@ -1268,19 +1323,80 @@ func TestGetLatestClientVersion_JitoSolanaIncludesMainnetPrereleaseUpgradeCandid
 	if err != nil {
 		t.Fatalf("GetLatestClientVersion() error = %v", err)
 	}
-	want, err := goversion.NewVersion("v4.1.0-rc.1")
+	want, err := goversion.NewVersion("v4.0.2")
 	if err != nil {
 		t.Fatalf("failed to parse wanted version: %v", err)
 	}
 	if !got.Equal(want) {
 		t.Fatalf("GetLatestClientVersion() = %q, want %q", got.Original(), want.Original())
 	}
-	if gotTag := client.TagNameForVersion(got); gotTag != "v4.1.0-rc.1-jito" {
-		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v4.1.0-rc.1-jito")
+	if gotTag := client.TagNameForVersion(got); gotTag != "v4.0.2-jito" {
+		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v4.0.2-jito")
 	}
 }
 
-func TestGetLatestClientVersion_AgaveUsesBetaRcTestnetFallbackWhenNotesOmitCluster(t *testing.T) {
+func TestGetLatestClientVersion_JitoSolanaFallsBackToAgaveDerivedCandidateWhenTitleMissing(t *testing.T) {
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			var body string
+			switch r.URL.Path {
+			case "/repos/jito-foundation/jito-solana/releases":
+				body = `[
+					{"name":"Release v4.2.0-beta.1-jito","tag_name":"v4.2.0-beta.1-jito","prerelease":true},
+					{"name":"Mainnet - v4.1.2-jito","tag_name":"v4.1.2-jito","prerelease":false}
+				]`
+			case "/repos/anza-xyz/agave/releases":
+				body = `[
+					{"name":"Release v4.2.0-beta.1","tag_name":"v4.2.0-beta.1","body":"This is a testnet release.","prerelease":true},
+					{"name":"Release v4.1.2","tag_name":"v4.1.2","body":"This is a stable Mainnet release.","prerelease":false}
+				]`
+			default:
+				return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
+			}
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    r,
+			}, nil
+		}),
+	}
+
+	ghClient := gogithub.NewClient(httpClient)
+	baseURL, err := url.Parse("https://api.github.test/")
+	if err != nil {
+		t.Fatalf("failed to parse test GitHub API URL: %v", err)
+	}
+	ghClient.BaseURL = baseURL
+
+	client := &Client{
+		clientName: constants.ClientNameJitoSolana,
+		cluster:    constants.ClusterNameTestnet,
+		repoOwner:  "jito-foundation",
+		repoName:   "jito-solana",
+		repoURL:    clientRepoConfigs[constants.ClientNameJitoSolana].URL,
+		client:     ghClient,
+		logger:     log.WithPrefix("test"),
+	}
+
+	got, err := client.GetLatestClientVersion()
+	if err != nil {
+		t.Fatalf("GetLatestClientVersion() error = %v", err)
+	}
+	want, err := goversion.NewVersion("v4.2.0-beta.1")
+	if err != nil {
+		t.Fatalf("failed to parse wanted version: %v", err)
+	}
+	if !got.Equal(want) {
+		t.Fatalf("GetLatestClientVersion() = %q, want %q", got.Original(), want.Original())
+	}
+	if gotTag := client.TagNameForVersion(got); gotTag != "v4.2.0-beta.1-jito" {
+		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v4.2.0-beta.1-jito")
+	}
+}
+
+func TestGetLatestClientVersion_AgaveIgnoresTestnetPrereleaseWhenNotesOmitCluster(t *testing.T) {
 	httpClient := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			if r.URL.Path != "/repos/anza-xyz/agave/releases" {
@@ -1322,7 +1438,57 @@ func TestGetLatestClientVersion_AgaveUsesBetaRcTestnetFallbackWhenNotesOmitClust
 	if err != nil {
 		t.Fatalf("GetLatestClientVersion() error = %v", err)
 	}
-	want, err := goversion.NewVersion("v4.2.0-beta.1")
+	want, err := goversion.NewVersion("v4.2.0-beta.0")
+	if err != nil {
+		t.Fatalf("failed to parse wanted version: %v", err)
+	}
+	if !got.Equal(want) {
+		t.Fatalf("GetLatestClientVersion() = %q, want %q", got.Original(), want.Original())
+	}
+}
+
+func TestGetLatestClientVersion_AgaveUsesExplicitTestnetPrereleaseNotes(t *testing.T) {
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Path != "/repos/anza-xyz/agave/releases" {
+				return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
+			}
+			body := `[
+				{"name":"Release v4.3.0-alpha.2","tag_name":"v4.3.0-alpha.2","body":"## What's Changed\n* master branch changes","prerelease":true},
+				{"name":"Release v4.2.0-beta.2","tag_name":"v4.2.0-beta.2","body":"This is a testnet release.","prerelease":true},
+				{"name":"Release v4.1.2","tag_name":"v4.1.2","body":"This is a stable Mainnet release.","prerelease":false}
+			]`
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    r,
+			}, nil
+		}),
+	}
+
+	ghClient := gogithub.NewClient(httpClient)
+	baseURL, err := url.Parse("https://api.github.test/")
+	if err != nil {
+		t.Fatalf("failed to parse test GitHub API URL: %v", err)
+	}
+	ghClient.BaseURL = baseURL
+
+	client, err := NewClient(Options{
+		Client:  constants.ClientNameAgave,
+		Cluster: constants.ClusterNameTestnet,
+	})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	client.client = ghClient
+
+	got, err := client.GetLatestClientVersion()
+	if err != nil {
+		t.Fatalf("GetLatestClientVersion() error = %v", err)
+	}
+	want, err := goversion.NewVersion("v4.2.0-beta.2")
 	if err != nil {
 		t.Fatalf("failed to parse wanted version: %v", err)
 	}
