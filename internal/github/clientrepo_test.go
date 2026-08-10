@@ -145,6 +145,33 @@ func TestClientRepoConfigs_FiredancerConfig(t *testing.T) {
 	}
 }
 
+func TestClientRepoConfigs_FiredancerReleaseTitleRegex(t *testing.T) {
+	config := clientRepoConfigs[constants.ClientNameFiredancer]
+	tests := []struct {
+		name        string
+		cluster     string
+		title       string
+		shouldMatch bool
+	}{
+		{name: "mainnet with version prefix", cluster: constants.ClusterNameMainnetBeta, title: "Firedancer Mainnet v1.1.3", shouldMatch: true},
+		{name: "mainnet without version prefix", cluster: constants.ClusterNameMainnetBeta, title: "Firedancer Mainnet 1.1.4", shouldMatch: true},
+		{name: "frankendancer without version prefix", cluster: constants.ClusterNameMainnetBeta, title: "Frankendancer Mainnet 0.1005.40100", shouldMatch: true},
+		{name: "testnet without version prefix", cluster: constants.ClusterNameTestnet, title: "Firedancer Testnet 1.2.0", shouldMatch: true},
+		{name: "wrong cluster", cluster: constants.ClusterNameMainnetBeta, title: "Firedancer Testnet 1.1.4", shouldMatch: false},
+		{name: "missing patch version", cluster: constants.ClusterNameMainnetBeta, title: "Firedancer Mainnet 1.1", shouldMatch: false},
+		{name: "unrelated title", cluster: constants.ClusterNameMainnetBeta, title: "Mainnet release 1.1.4", shouldMatch: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			re := regexp.MustCompile(config.ReleaseTitleRegexes[tt.cluster])
+			if got := re.MatchString(tt.title); got != tt.shouldMatch {
+				t.Errorf("release title match = %v, want %v for %q", got, tt.shouldMatch, tt.title)
+			}
+		})
+	}
+}
+
 func TestClientRepoConfigs_RakuraiConfig(t *testing.T) {
 	config := clientRepoConfigs[constants.ClientNameRakurai]
 
@@ -215,7 +242,7 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			clientName: constants.ClientNameFiredancer,
 			cluster:    constants.ClusterNameMainnetBeta,
 			regexType:  "ReleaseTitleRegex",
-			regex:      "^(.*)dancer Mainnet v([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
+			regex:      "^(.*)dancer Mainnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
 		},
 		{
 			clientName: constants.ClientNameFiredancer,
@@ -227,7 +254,7 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			clientName: constants.ClientNameFiredancer,
 			cluster:    constants.ClusterNameTestnet,
 			regexType:  "ReleaseTitleRegex",
-			regex:      "^(.*)dancer Testnet v([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
+			regex:      "^(.*)dancer Testnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
 		},
 	}
 
@@ -1543,6 +1570,54 @@ func TestGetLatestClientVersion_FiredancerIncludesMainnetSuitablePrerelease(t *t
 	}
 	if gotTag := client.TagNameForVersion(got); gotTag != "v0.1005.40100" {
 		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v0.1005.40100")
+	}
+}
+
+func TestGetLatestClientVersion_FiredancerIncludesMainnetTitleWithoutVersionPrefix(t *testing.T) {
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Path != "/repos/firedancer-io/firedancer/releases" {
+				return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
+			}
+
+			body := `[
+				{"name":"Firedancer Mainnet 1.1.4","tag_name":"v1.1.4","body":"This is a mainnet ready release.","prerelease":false},
+				{"name":"Firedancer Mainnet v1.1.3","tag_name":"v1.1.3","body":"This is a mainnet ready release.","prerelease":false},
+				{"name":"Firedancer Testnet v1.1.2","tag_name":"v1.1.2","body":"This is a Testnet release. It is not suggested for Mainnet Beta use.","prerelease":true}
+			]`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    r,
+			}, nil
+		}),
+	}
+
+	client, err := NewClient(Options{
+		Cluster: constants.ClusterNameMainnetBeta,
+		Client:  constants.ClientNameFiredancer,
+	})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	ghClient := gogithub.NewClient(httpClient)
+	baseURL, err := url.Parse("https://api.github.test/")
+	if err != nil {
+		t.Fatalf("failed to parse test GitHub API URL: %v", err)
+	}
+	ghClient.BaseURL = baseURL
+	client.client = ghClient
+
+	got, err := client.GetLatestClientVersion()
+	if err != nil {
+		t.Fatalf("GetLatestClientVersion() error = %v", err)
+	}
+	if got.Original() != "v1.1.4" {
+		t.Fatalf("GetLatestClientVersion() = %q, want %q", got.Original(), "v1.1.4")
+	}
+	if gotTag := client.TagNameForVersion(got); gotTag != "v1.1.4" {
+		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v1.1.4")
 	}
 }
 

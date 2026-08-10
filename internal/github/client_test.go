@@ -750,6 +750,50 @@ func TestFiredancerVersionStringsByClusterIncludesMainnetSuitableTestnetRelease(
 	}
 }
 
+func TestFiredancerVersionStringsByClusterIncludesTitleWithoutVersionPrefix(t *testing.T) {
+	client, err := NewClient(Options{
+		Cluster: constants.ClusterNameMainnetBeta,
+		Client:  constants.ClientNameFiredancer,
+	})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	releases := []*github.RepositoryRelease{
+		{
+			Name:    github.String("Firedancer Mainnet 1.1.4"),
+			TagName: github.String("v1.1.4"),
+			Body:    github.String("This is a mainnet ready release."),
+		},
+		{
+			Name:    github.String("Firedancer Mainnet v1.1.3"),
+			TagName: github.String("v1.1.3"),
+			Body:    github.String("This is a mainnet ready release."),
+		},
+		{
+			Name:       github.String("Firedancer Testnet v1.1.2"),
+			TagName:    github.String("v1.1.2"),
+			Body:       github.String("This is a Testnet release. It is not suggested for Mainnet Beta use."),
+			Prerelease: github.Bool(true),
+		},
+	}
+
+	versionStrings := client.firedancerVersionStringsByCluster(releases)
+	assertVersionStringsEqual(t, versionStrings[constants.ClusterNameMainnetBeta], []string{"v1.1.4", "v1.1.3"})
+	assertVersionStringsEqual(t, versionStrings[constants.ClusterNameTestnet], []string{"v1.1.2"})
+
+	got, err := client.latestVersionFromClusterVersionStrings(versionStrings)
+	if err != nil {
+		t.Fatalf("latestVersionFromClusterVersionStrings() error = %v", err)
+	}
+	if got.Original() != "v1.1.4" {
+		t.Fatalf("latestVersionFromClusterVersionStrings() = %q, want %q", got.Original(), "v1.1.4")
+	}
+	if gotTag := client.TagNameForVersion(got); gotTag != "v1.1.4" {
+		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v1.1.4")
+	}
+}
+
 func assertVersionStringsEqual(t *testing.T, got []string, want []string) {
 	t.Helper()
 
