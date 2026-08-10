@@ -41,10 +41,10 @@ var clientRepoConfigs = map[string]ClientRepoConfig{
 			constants.ClusterNameMainnetBeta: "(?is).*This is a Testnet release\\.[^\\n]*(may also be used on mainnet|also (?:be )?suitable for mainnet).*",
 		},
 		ReleaseTitleRegexes: map[string]string{
-			// One day this will change from Frankendancer to Firedancer so we match on dancer suffix
-			constants.ClusterNameMainnetBeta: "^(.*)dancer Mainnet v([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
-			// One day this will change from Frankendancer to Firedancer so we match on dancer suffix
-			constants.ClusterNameTestnet: "^(.*)dancer Testnet v([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
+			// Match the dancer suffix and tolerate releases that omit the optional v before the version.
+			constants.ClusterNameMainnetBeta: "^(.*)dancer Mainnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
+			// Match the dancer suffix and tolerate releases that omit the optional v before the version.
+			constants.ClusterNameTestnet: "^(.*)dancer Testnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
 		},
 	},
 }
