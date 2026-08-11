@@ -132,7 +132,7 @@ validator:
     passive_pubkey: <PASSIVE_IDENTITY_PUBKEY>
 ```
 
-Legacy `active` and `passive` keypair paths remain supported for compatibility. Public IP addresses are not used for role detection because gossip addresses are not an authoritative one-to-one mapping between hosts and voting identities.
+Legacy `active` and `passive` keypair paths remain supported for compatibility. When either is configured, the application prints a startup warning recommending the equivalent public-key or vote-account configuration. Public IP addresses are not used for role detection because gossip addresses are not an authoritative one-to-one mapping between hosts and voting identities.
 
 If a command defines `environment` while `inherit_environment` remains `false`, the command runs with only the explicit `environment` block and does not inherit the parent process environment. Set `inherit_environment: true` when the command depends on inherited variables such as `PATH`, `HOME`, or service-injected credentials.
 

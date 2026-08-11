@@ -1,12 +1,14 @@
 package validator
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/log"
 	"github.com/gagliardetto/solana-go"
 	goversion "github.com/hashicorp/go-version"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/config"
@@ -24,6 +26,65 @@ func TestRoleConstants(t *testing.T) {
 	}
 	if RoleUnknown != "unknown" {
 		t.Errorf("Expected RoleUnknown to be 'unknown', got %s", RoleUnknown)
+	}
+}
+
+func TestWarnLegacyIdentityKeyfiles(t *testing.T) {
+	tests := []struct {
+		name            string
+		identities      config.Identities
+		wantActiveWarn  bool
+		wantPassiveWarn bool
+	}{
+		{
+			name:           "active legacy keyfile",
+			identities:     config.Identities{ActiveKeyPairFile: "active.json", PassivePublicKey: "passive-key"},
+			wantActiveWarn: true,
+		},
+		{
+			name:            "passive legacy keyfile",
+			identities:      config.Identities{ActivePublicKey: "active-key", PassiveKeyPairFile: "passive.json"},
+			wantPassiveWarn: true,
+		},
+		{
+			name: "both legacy keyfiles",
+			identities: config.Identities{
+				ActiveKeyPairFile:  "active.json",
+				PassiveKeyPairFile: "passive.json",
+			},
+			wantActiveWarn:  true,
+			wantPassiveWarn: true,
+		},
+		{
+			name: "public keys only",
+			identities: config.Identities{
+				ActivePublicKey:  "active-key",
+				PassivePublicKey: "passive-key",
+			},
+		},
+		{
+			name:       "vote account only",
+			identities: config.Identities{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var output bytes.Buffer
+			validator := Validator{
+				cfg:    config.Validator{Identities: tt.identities},
+				logger: log.New(&output).WithPrefix("validator"),
+			}
+
+			validator.warnLegacyIdentityKeyfiles()
+			got := output.String()
+			if strings.Contains(got, "validator.identities.active") != tt.wantActiveWarn {
+				t.Fatalf("active warning presence = %t, want %t; output: %s", strings.Contains(got, "validator.identities.active"), tt.wantActiveWarn, got)
+			}
+			if strings.Contains(got, "validator.identities.passive") != tt.wantPassiveWarn {
+				t.Fatalf("passive warning presence = %t, want %t; output: %s", strings.Contains(got, "validator.identities.passive"), tt.wantPassiveWarn, got)
+			}
+		})
 	}
 }
 

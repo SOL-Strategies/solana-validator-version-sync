@@ -60,6 +60,7 @@ func New(opts Options) (v *Validator, err error) {
 		cfg:                      opts.ValidatorConfig,
 		logger:                   log.WithPrefix("validator"),
 	}
+	v.warnLegacyIdentityKeyfiles()
 
 	// set supplied version constraint
 	err = v.setVersionConstraint()
@@ -90,6 +91,21 @@ func New(opts Options) (v *Validator, err error) {
 	}
 
 	return v, nil
+}
+
+func (v *Validator) warnLegacyIdentityKeyfiles() {
+	if v.cfg.Identities.ActiveKeyPairFile != "" {
+		v.logger.Warn(
+			"legacy active identity keypair file configured; consider validator.vote_account_pubkey or validator.identities.active_pubkey to avoid reading private key material",
+			"config", "validator.identities.active",
+		)
+	}
+	if v.cfg.Identities.PassiveKeyPairFile != "" {
+		v.logger.Warn(
+			"legacy passive identity keypair file configured; consider validator.identities.passive_pubkey to avoid reading private key material",
+			"config", "validator.identities.passive",
+		)
+	}
 }
 
 // setversionConstraint sets the client version constraint
