@@ -7,8 +7,8 @@ validator:
   version_constraint: ">= 3.0.10, < 3.2.0"
   rpc_url: http://127.0.0.1:8899
   identities:
-    active: local-test/active-identity.json
-    passive: local-test/passive-identity.json
+    active_pubkey: 8RbyED263o86187rAHC4xJNBVJnFpMow25erXsGK2m6k
+    passive_pubkey: FrfQqY892gLiRJNrZMWc1dqvC72AbLKJNyfWwc4vYaqQ
 
 cluster:
   name: testnet

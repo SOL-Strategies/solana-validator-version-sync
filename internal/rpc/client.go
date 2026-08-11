@@ -48,6 +48,18 @@ type clusterNodeResult struct {
 
 type clusterNodeResults []clusterNodeResult
 
+// VoteAccount contains the identity association needed for validator role discovery.
+type VoteAccount struct {
+	VotePubkey string `json:"votePubkey"`
+	NodePubkey string `json:"nodePubkey"`
+}
+
+// VoteAccounts contains current and delinquent vote accounts.
+type VoteAccounts struct {
+	Current    []VoteAccount `json:"current"`
+	Delinquent []VoteAccount `json:"delinquent"`
+}
+
 // NewClient creates a new RPC client
 func NewClient(url string) *Client {
 	return &Client{
@@ -204,6 +216,35 @@ func (c *Client) getClusterNodes(ctx context.Context) (*clusterNodeResults, erro
 	return &clusterNodeResults, nil
 }
 
+// getVoteAccounts gets current and delinquent vote accounts used for identity discovery.
+func (c *Client) getVoteAccounts(ctx context.Context) (*VoteAccounts, error) {
+	resp, err := c.makeRPCCall(ctx, "getVoteAccounts", []interface{}{
+		map[string]interface{}{
+			"commitment":              "finalized",
+			"keepUnstakedDelinquents": true,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get vote accounts: %w", err)
+	}
+
+	encoded, err := json.Marshal(resp.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode vote accounts response: %w", err)
+	}
+
+	var accounts VoteAccounts
+	if err := json.Unmarshal(encoded, &accounts); err != nil {
+		return nil, fmt.Errorf("invalid vote accounts response: %w", err)
+	}
+	for _, account := range append(accounts.Current, accounts.Delinquent...) {
+		if account.VotePubkey == "" || account.NodePubkey == "" {
+			return nil, fmt.Errorf("invalid vote account: votePubkey and nodePubkey are required")
+		}
+	}
+	return &accounts, nil
+}
+
 // Health checks if the validator is healthy
 func (c *Client) GetHealth() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -223,6 +264,13 @@ func (c *Client) GetIdentity() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	return c.getIdentity(ctx)
+}
+
+// GetVoteAccounts gets current and delinquent vote accounts.
+func (c *Client) GetVoteAccounts() (*VoteAccounts, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return c.getVoteAccounts(ctx)
 }
 
 // GetNodeWithIdentityPublicKey gets a validator with the given identity public key

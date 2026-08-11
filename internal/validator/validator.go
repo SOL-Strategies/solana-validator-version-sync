@@ -38,13 +38,14 @@ type Validator struct {
 	PassiveIdentityPublicKey string
 	State                    State
 
-	versionConstraint version.Constraints
-	syncConfig        config.Sync
-	cfg               config.Validator
-	logger            *log.Logger
-	rpcClient         *rpc.Client
-	sfdpClient        *sfdp.Client
-	githubClient      *github.Client
+	versionConstraint           version.Constraints
+	syncConfig                  config.Sync
+	cfg                         config.Validator
+	logger                      *log.Logger
+	rpcClient                   *rpc.Client
+	sfdpClient                  *sfdp.Client
+	githubClient                *github.Client
+	localIdentityHasVoteAccount bool
 }
 
 // New creates a new Validator
@@ -53,12 +54,13 @@ func New(opts Options) (v *Validator, err error) {
 		State: State{
 			Cluster: opts.Cluster,
 		},
-		ActiveIdentityPublicKey:  opts.ValidatorConfig.Identities.ActiveKeyPair.PublicKey().String(),
-		PassiveIdentityPublicKey: opts.ValidatorConfig.Identities.PassiveKeyPair.PublicKey().String(),
+		ActiveIdentityPublicKey:  opts.ValidatorConfig.Identities.ActiveIdentityPublicKey(),
+		PassiveIdentityPublicKey: opts.ValidatorConfig.Identities.PassiveIdentityPublicKey(),
 		syncConfig:               opts.SyncConfig,
 		cfg:                      opts.ValidatorConfig,
 		logger:                   log.WithPrefix("validator"),
 	}
+	v.warnLegacyIdentityKeyfiles()
 
 	// set supplied version constraint
 	err = v.setVersionConstraint()
@@ -91,6 +93,21 @@ func New(opts Options) (v *Validator, err error) {
 	return v, nil
 }
 
+func (v *Validator) warnLegacyIdentityKeyfiles() {
+	if v.cfg.Identities.ActiveKeyPairFile != "" {
+		v.logger.Warn(
+			"legacy active identity keypair file configured; consider validator.vote_account_pubkey or validator.identities.active_pubkey to avoid reading private key material",
+			"config", "validator.identities.active",
+		)
+	}
+	if v.cfg.Identities.PassiveKeyPairFile != "" {
+		v.logger.Warn(
+			"legacy passive identity keypair file configured; consider validator.identities.passive_pubkey to avoid reading private key material",
+			"config", "validator.identities.passive",
+		)
+	}
+}
+
 // setversionConstraint sets the client version constraint
 func (v *Validator) setVersionConstraint() (err error) {
 	parsedConstraint, err := version.NewConstraint(v.cfg.VersionConstraint)
@@ -107,7 +124,7 @@ func (v *Validator) setVersionConstraint() (err error) {
 // SyncVersion syncs the validator's version
 func (v *Validator) SyncVersion() (err error) {
 	// warn if active and passive identites are the same
-	if v.ActiveIdentityPublicKey == v.PassiveIdentityPublicKey {
+	if v.PassiveIdentityPublicKey != "" && v.ActiveIdentityPublicKey == v.PassiveIdentityPublicKey {
 		v.logger.Warn("configured active and passive identites are the same",
 			"activePubkey", v.ActiveIdentityPublicKey,
 			"passivePubkey", v.PassiveIdentityPublicKey,
@@ -382,6 +399,12 @@ func (v *Validator) refreshState() error {
 	}
 	v.State.IdentityPublicKey = identityPubkey
 
+	if v.cfg.VoteAccountPublicKey != "" {
+		if err := v.resolveIdentitiesFromVoteAccount(); err != nil {
+			return err
+		}
+	}
+
 	// get the validator's health
 	health, err := v.rpcClient.GetHealth()
 	if err != nil {
@@ -421,12 +444,50 @@ func (v *Validator) IsRoleUnknown() bool {
 
 // IsActive checks if the validator is the active identity
 func (v *Validator) IsActive() bool {
-	return v.State.IdentityPublicKey == v.ActiveIdentityPublicKey
+	return v.ActiveIdentityPublicKey != "" && v.State.IdentityPublicKey == v.ActiveIdentityPublicKey
 }
 
 // IsPassive checks if the validator is the passive identity
 // cover cases like testnet where a validator could be given the same active and passive identity
 // in that case, we assume active
 func (v *Validator) IsPassive() bool {
-	return v.State.IdentityPublicKey == v.PassiveIdentityPublicKey && !v.IsActive()
+	if v.IsActive() || v.State.IdentityPublicKey == "" {
+		return false
+	}
+	if v.PassiveIdentityPublicKey != "" {
+		return v.State.IdentityPublicKey == v.PassiveIdentityPublicKey
+	}
+	return !v.localIdentityHasVoteAccount
+}
+
+func (v *Validator) resolveIdentitiesFromVoteAccount() error {
+	accounts, err := v.rpcClient.GetVoteAccounts()
+	if err != nil {
+		return fmt.Errorf("failed to resolve active identity from vote account %s: %w", v.cfg.VoteAccountPublicKey, err)
+	}
+
+	allAccounts := append(append([]rpc.VoteAccount{}, accounts.Current...), accounts.Delinquent...)
+	var matches []rpc.VoteAccount
+	v.localIdentityHasVoteAccount = false
+	for _, account := range allAccounts {
+		if account.VotePubkey == v.cfg.VoteAccountPublicKey {
+			matches = append(matches, account)
+		}
+		if account.NodePubkey == v.State.IdentityPublicKey {
+			v.localIdentityHasVoteAccount = true
+		}
+	}
+
+	if len(matches) == 0 {
+		return fmt.Errorf("vote account %s was not found in current or delinquent vote accounts", v.cfg.VoteAccountPublicKey)
+	}
+	if len(matches) > 1 {
+		return fmt.Errorf("vote account %s appeared multiple times in current or delinquent vote accounts", v.cfg.VoteAccountPublicKey)
+	}
+
+	v.ActiveIdentityPublicKey = matches[0].NodePubkey
+	if v.PassiveIdentityPublicKey != "" && v.ActiveIdentityPublicKey == v.PassiveIdentityPublicKey {
+		return fmt.Errorf("resolved active identity %s matches the configured passive identity", v.ActiveIdentityPublicKey)
+	}
+	return nil
 }

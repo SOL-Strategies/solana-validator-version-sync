@@ -11,6 +11,7 @@ import (
 )
 
 func TestValidator_Validate(t *testing.T) {
+	validIdentity := "8RbyED263o86187rAHC4xJNBVJnFpMow25erXsGK2m6k"
 	tests := []struct {
 		name      string
 		validator Validator
@@ -22,6 +23,7 @@ func TestValidator_Validate(t *testing.T) {
 				Client:            constants.ClientNameAgave,
 				RPCURL:            "http://localhost:8899",
 				VersionConstraint: ">= 1.0.0",
+				Identities:        Identities{ActivePublicKey: validIdentity},
 			},
 			wantErr: false,
 		},
@@ -31,6 +33,7 @@ func TestValidator_Validate(t *testing.T) {
 				Client:            constants.ClientNameJitoSolana,
 				RPCURL:            "https://api.mainnet-beta.solana.com",
 				VersionConstraint: ">= 3.0.0, < 3.0.1",
+				Identities:        Identities{ActivePublicKey: validIdentity},
 			},
 			wantErr: false,
 		},
@@ -40,6 +43,7 @@ func TestValidator_Validate(t *testing.T) {
 				Client:            constants.ClientNameFiredancer,
 				RPCURL:            "http://127.0.0.1:8899",
 				VersionConstraint: ">= 0.1.0",
+				Identities:        Identities{ActivePublicKey: validIdentity},
 			},
 			wantErr: false,
 		},
@@ -49,6 +53,7 @@ func TestValidator_Validate(t *testing.T) {
 				Client:            constants.ClientNameRakurai,
 				RPCURL:            "http://127.0.0.1:8899",
 				VersionConstraint: ">= 1.18.0",
+				Identities:        Identities{ActivePublicKey: validIdentity},
 			},
 			wantErr: false,
 		},
@@ -58,6 +63,7 @@ func TestValidator_Validate(t *testing.T) {
 				Client:            "rakurai",
 				RPCURL:            "http://127.0.0.1:8899",
 				VersionConstraint: ">= 1.18.0",
+				Identities:        Identities{ActivePublicKey: validIdentity},
 			},
 			wantErr: false,
 		},
@@ -95,6 +101,44 @@ func TestValidator_Validate(t *testing.T) {
 			}
 			if !tt.wantErr && tt.validator.Client == "rakurai" {
 				t.Errorf("Validator.Validate() should normalize legacy client alias, got %s", tt.validator.Client)
+			}
+		})
+	}
+}
+
+func TestValidator_ValidateIdentitySources(t *testing.T) {
+	active := "8RbyED263o86187rAHC4xJNBVJnFpMow25erXsGK2m6k"
+	passive := "FrfQqY892gLiRJNrZMWc1dqvC72AbLKJNyfWwc4vYaqQ"
+	base := func() Validator {
+		return Validator{Client: constants.ClientNameAgave, RPCURL: "http://localhost:8899"}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*Validator)
+		wantErr bool
+	}{
+		{"vote account source", func(v *Validator) { v.VoteAccountPublicKey = active }, false},
+		{"identity pubkeys", func(v *Validator) { v.Identities.ActivePublicKey, v.Identities.PassivePublicKey = active, passive }, false},
+		{"legacy paths", func(v *Validator) {
+			v.Identities.ActiveKeyPairFile, v.Identities.PassiveKeyPairFile = "active.json", "passive.json"
+		}, false},
+		{"missing active source", func(*Validator) {}, true},
+		{"conflicting active sources", func(v *Validator) { v.VoteAccountPublicKey, v.Identities.ActivePublicKey = active, active }, true},
+		{"conflicting passive sources", func(v *Validator) {
+			v.Identities.ActivePublicKey, v.Identities.PassivePublicKey, v.Identities.PassiveKeyPairFile = active, passive, "passive.json"
+		}, true},
+		{"invalid active pubkey", func(v *Validator) { v.Identities.ActivePublicKey = "invalid" }, true},
+		{"identical identities", func(v *Validator) { v.Identities.ActivePublicKey, v.Identities.PassivePublicKey = active, active }, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validator := base()
+			tt.mutate(&validator)
+			err := validator.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Validator.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -179,6 +223,25 @@ func TestIdentities_Load(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestIdentities_Load_PublicKeysDoNotReadFiles(t *testing.T) {
+	identities := Identities{
+		ActivePublicKey:  "8RbyED263o86187rAHC4xJNBVJnFpMow25erXsGK2m6k",
+		PassivePublicKey: "FrfQqY892gLiRJNrZMWc1dqvC72AbLKJNyfWwc4vYaqQ",
+	}
+	if err := identities.Load(); err != nil {
+		t.Fatalf("Identities.Load() error = %v", err)
+	}
+	if identities.ActiveKeyPair != nil || identities.PassiveKeyPair != nil {
+		t.Fatal("public-key configuration should not load keypairs")
+	}
+	if identities.ActiveIdentityPublicKey() != identities.ActivePublicKey {
+		t.Fatalf("ActiveIdentityPublicKey() = %q", identities.ActiveIdentityPublicKey())
+	}
+	if identities.PassiveIdentityPublicKey() != identities.PassivePublicKey {
+		t.Fatalf("PassiveIdentityPublicKey() = %q", identities.PassiveIdentityPublicKey())
 	}
 }
 
