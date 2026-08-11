@@ -58,9 +58,14 @@ validator:
   client: agave                          # required, one of agave|jito-solana|rakurai-validator|firedancer (legacy alias: rakurai)
   version_constraint: ">= 2.3.6, < 3.0.0" # required, a valid go-version semver constraint string - ref https://github.com/hashicorp/go-version
   rpc_url: http://127.0.0.1:8899         # optional, default: http:127.0.0.1:8899 - local validator rpc URL
+
+  # Preferred: resolve the active validator identity from this vote account via getVoteAccounts.
+  # The identity is considered active when the vote account is either current or delinquent.
+  vote_account_pubkey: <VOTE_ACCOUNT_PUBKEY>
+
+  # Optional passive identity. Public keys avoid reading private key material.
   identities:
-    active: local-test/active-identity.json   # required - path to validator active keypair
-    passive: local-test/passive-identity.json # required - path to validator passive keypair
+    passive_pubkey: <PASSIVE_IDENTITY_PUBKEY>
 
 cluster:
   name: testnet # required - one of mainnet-beta|testnet
@@ -106,6 +111,28 @@ sync:
         TO_VERSION: "{{ .VersionTo }}"
     # ...
 ```
+
+Exactly one active identity source must be configured:
+
+- `validator.vote_account_pubkey` (preferred): dynamically resolves the active identity from the network.
+- `validator.identities.active_pubkey`: uses a configured identity public key directly.
+- `validator.identities.active`: legacy path to an active identity keypair file.
+
+The passive identity is optional. Configure at most one of `validator.identities.passive_pubkey` or the legacy `validator.identities.passive` keypair path. When a passive identity is configured, any local identity matching neither active nor passive is treated as unknown and syncing is skipped. A configuration using only public keys does not read either keypair file.
+
+For example, a static, file-free configuration is:
+
+```yaml
+validator:
+  client: agave
+  version_constraint: ">= 2.3.6, < 3.0.0"
+  rpc_url: http://127.0.0.1:8899
+  identities:
+    active_pubkey: <ACTIVE_IDENTITY_PUBKEY>
+    passive_pubkey: <PASSIVE_IDENTITY_PUBKEY>
+```
+
+Legacy `active` and `passive` keypair paths remain supported for compatibility. Public IP addresses are not used for role detection because gossip addresses are not an authoritative one-to-one mapping between hosts and voting identities.
 
 If a command defines `environment` while `inherit_environment` remains `false`, the command runs with only the explicit `environment` block and does not inherit the parent process environment. Set `inherit_environment: true` when the command depends on inherited variables such as `PATH`, `HOME`, or service-injected credentials.
 

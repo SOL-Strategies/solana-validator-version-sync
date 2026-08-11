@@ -624,3 +624,63 @@ func TestClient_GetNodeWithIdentityPublicKey(t *testing.T) {
 		})
 	}
 }
+
+func TestClient_GetVoteAccounts(t *testing.T) {
+	var request JSONRPCRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		json.NewEncoder(w).Encode(JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      1,
+			Result: map[string]interface{}{
+				"current": []interface{}{map[string]interface{}{
+					"votePubkey": "vote-current",
+					"nodePubkey": "node-current",
+				}},
+				"delinquent": []interface{}{map[string]interface{}{
+					"votePubkey": "vote-delinquent",
+					"nodePubkey": "node-delinquent",
+				}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	accounts, err := NewClient(server.URL).GetVoteAccounts()
+	if err != nil {
+		t.Fatalf("GetVoteAccounts() error = %v", err)
+	}
+	if len(accounts.Current) != 1 || accounts.Current[0].NodePubkey != "node-current" {
+		t.Fatalf("current accounts = %#v", accounts.Current)
+	}
+	if len(accounts.Delinquent) != 1 || accounts.Delinquent[0].NodePubkey != "node-delinquent" {
+		t.Fatalf("delinquent accounts = %#v", accounts.Delinquent)
+	}
+	if request.Method != "getVoteAccounts" {
+		t.Fatalf("method = %q, want getVoteAccounts", request.Method)
+	}
+	config, ok := request.Params[0].(map[string]interface{})
+	if !ok || config["commitment"] != "finalized" || config["keepUnstakedDelinquents"] != true {
+		t.Fatalf("getVoteAccounts config = %#v", request.Params)
+	}
+}
+
+func TestClient_GetVoteAccountsRejectsMalformedAccount(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      1,
+			Result: map[string]interface{}{
+				"current":    []interface{}{map[string]interface{}{"votePubkey": "vote-without-node"}},
+				"delinquent": []interface{}{},
+			},
+		})
+	}))
+	defer server.Close()
+
+	if _, err := NewClient(server.URL).GetVoteAccounts(); err == nil {
+		t.Fatal("GetVoteAccounts() should reject an account without nodePubkey")
+	}
+}

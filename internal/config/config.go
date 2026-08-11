@@ -77,13 +77,18 @@ func (c *Config) LoadFromFile(filePath string) error {
 
 // Initialize processes and validates the loaded configuration
 func (c *Config) Initialize() error {
+	// Validate source selection before opening any configured keypair files.
+	if err := c.validate(); err != nil {
+		return err
+	}
+
 	// load identity key pair files
 	if err := c.Validator.Identities.Load(); err != nil {
 		return err
 	}
 
-	// validate configuration (after identity files are loaded)
-	if err := c.validate(); err != nil {
+	// Validate again after loading so derived keypair public keys can be compared.
+	if err := c.Validator.Validate(); err != nil {
 		return err
 	}
 

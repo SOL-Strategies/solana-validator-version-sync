@@ -1,6 +1,9 @@
 package validator
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -8,6 +11,7 @@ import (
 	goversion "github.com/hashicorp/go-version"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/config"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/constants"
+	"github.com/sol-strategies/solana-validator-version-sync/internal/rpc"
 	"github.com/sol-strategies/solana-validator-version-sync/internal/sync_commands"
 )
 
@@ -20,6 +24,116 @@ func TestRoleConstants(t *testing.T) {
 	}
 	if RoleUnknown != "unknown" {
 		t.Errorf("Expected RoleUnknown to be 'unknown', got %s", RoleUnknown)
+	}
+}
+
+func TestResolveIdentitiesFromVoteAccount(t *testing.T) {
+	tests := []struct {
+		name          string
+		localIdentity string
+		current       []rpc.VoteAccount
+		delinquent    []rpc.VoteAccount
+		passive       string
+		wantRole      string
+		wantActive    string
+		wantErr       bool
+	}{
+		{
+			name:          "current active identity",
+			localIdentity: "active-node",
+			current:       []rpc.VoteAccount{{VotePubkey: "configured-vote", NodePubkey: "active-node"}},
+			wantRole:      RoleActive,
+			wantActive:    "active-node",
+		},
+		{
+			name:          "delinquent active identity",
+			localIdentity: "active-node",
+			delinquent:    []rpc.VoteAccount{{VotePubkey: "configured-vote", NodePubkey: "active-node"}},
+			wantRole:      RoleActive,
+			wantActive:    "active-node",
+		},
+		{
+			name:          "network inferred passive identity",
+			localIdentity: "passive-node",
+			current:       []rpc.VoteAccount{{VotePubkey: "configured-vote", NodePubkey: "active-node"}},
+			wantRole:      RolePassive,
+			wantActive:    "active-node",
+		},
+		{
+			name:          "explicit passive identity",
+			localIdentity: "passive-node",
+			current:       []rpc.VoteAccount{{VotePubkey: "configured-vote", NodePubkey: "active-node"}},
+			passive:       "passive-node",
+			wantRole:      RolePassive,
+			wantActive:    "active-node",
+		},
+		{
+			name:          "identity voting for a different account is unknown",
+			localIdentity: "other-active-node",
+			current: []rpc.VoteAccount{
+				{VotePubkey: "configured-vote", NodePubkey: "active-node"},
+				{VotePubkey: "other-vote", NodePubkey: "other-active-node"},
+			},
+			wantRole:   RoleUnknown,
+			wantActive: "active-node",
+		},
+		{
+			name:          "explicit passive mismatch is unknown",
+			localIdentity: "unexpected-node",
+			current:       []rpc.VoteAccount{{VotePubkey: "configured-vote", NodePubkey: "active-node"}},
+			passive:       "passive-node",
+			wantRole:      RoleUnknown,
+			wantActive:    "active-node",
+		},
+		{
+			name:          "configured vote account missing",
+			localIdentity: "passive-node",
+			current:       []rpc.VoteAccount{{VotePubkey: "other-vote", NodePubkey: "other-node"}},
+			wantErr:       true,
+		},
+		{
+			name:          "configured vote account ambiguous",
+			localIdentity: "passive-node",
+			current:       []rpc.VoteAccount{{VotePubkey: "configured-vote", NodePubkey: "active-node"}},
+			delinquent:    []rpc.VoteAccount{{VotePubkey: "configured-vote", NodePubkey: "active-node"}},
+			wantErr:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode(rpc.JSONRPCResponse{
+					JSONRPC: "2.0",
+					ID:      1,
+					Result: rpc.VoteAccounts{
+						Current:    tt.current,
+						Delinquent: tt.delinquent,
+					},
+				})
+			}))
+			defer server.Close()
+
+			validator := Validator{
+				State:                    State{IdentityPublicKey: tt.localIdentity},
+				cfg:                      config.Validator{VoteAccountPublicKey: "configured-vote"},
+				PassiveIdentityPublicKey: tt.passive,
+				rpcClient:                rpc.NewClient(server.URL),
+			}
+			err := validator.resolveIdentitiesFromVoteAccount()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("resolveIdentitiesFromVoteAccount() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if validator.ActiveIdentityPublicKey != tt.wantActive {
+				t.Fatalf("active identity = %q, want %q", validator.ActiveIdentityPublicKey, tt.wantActive)
+			}
+			if validator.Role() != tt.wantRole {
+				t.Fatalf("Role() = %q, want %q", validator.Role(), tt.wantRole)
+			}
+		})
 	}
 }
 
