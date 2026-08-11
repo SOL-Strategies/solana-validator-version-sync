@@ -140,7 +140,7 @@ If a command defines `environment` while `inherit_environment` remains `false`, 
 
 ### Prerequisites
 
-- Go 1.25 or later
+- Go 1.26.5 or later
 - Make
 - Docker (for Docker development)
 

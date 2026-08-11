@@ -1,6 +1,6 @@
 module github.com/sol-strategies/solana-validator-version-sync
 
-go 1.25.0
+go 1.26.5
 
 require (
 	github.com/charmbracelet/lipgloss v0.9.1

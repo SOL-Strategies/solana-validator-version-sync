@@ -37,7 +37,7 @@ for platform in "${PLATFORMS[@]}"; do
     output_name="${BINARY_NAME}-${VERSION}-${os}-${arch}"
     
     echo "📦 Building for $os/$arch..."
-    docker run --rm -v "$(pwd)":/app -w /app golang:1.25-alpine sh -c "
+    docker run --rm -v "$(pwd)":/app -w /app golang:1.26.5-alpine sh -c "
         apk add --no-cache git ca-certificates &&
         go mod download &&
         CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -mod=mod -ldflags='-s -w' -o bin/$output_name ./cmd/solana-validator-version-sync
