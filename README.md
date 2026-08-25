@@ -14,7 +14,7 @@ Run doublezero too? Keep it up to date too with [doublezero-version-sync](https:
 - 👮 **SFDP Compliance**: Checks version requirements against SFDP (Solana Foundation Delegation Program) bounds.
 - ♻️ **Sync Commands**: Executes configurable commands when a version sync for the given validator client is required.
 - ⌚ **Single-shot or recurring**: Run once or on a specified interval
-- ✅ **Multiple Clients**: Supports [agave](https://github.com/anza-xyz/agave), [jito-solana](https://github.com/jito-foundation/jito-solana/), [rakurai-validator](https://github.com/rakurai-io/rakurai-validator) and [firedancer](https://github.com/firedancer-io/firedancer) validator client release monitoring.
+- ✅ **Multiple Clients**: Supports [agave](https://github.com/anza-xyz/agave), [jito-solana](https://github.com/jito-foundation/jito-solana/), [rakurai-validator](https://github.com/rakurai-io/rakurai-validator), [firedancer](https://github.com/firedancer-io/firedancer), and [FireBAM](https://github.com/jito-foundation/firebam) validator client release monitoring.
 
 ## Installation
 
@@ -55,7 +55,8 @@ log:
   format: text # optional, default: text, one of text|logfmt|json
 
 validator:
-  client: agave                          # required, one of agave|jito-solana|rakurai-validator|firedancer (legacy alias: rakurai)
+  client: agave                          # required, one of agave|jito-solana|rakurai-validator|firedancer|firebam (legacy alias: rakurai)
+  # release_track: frankendancer         # required only for firebam, one of frankendancer|firedancer
   version_constraint: ">= 2.3.6, < 3.0.0" # required, a valid go-version semver constraint string - ref https://github.com/hashicorp/go-version
   rpc_url: http://127.0.0.1:8899         # optional, default: http:127.0.0.1:8899 - local validator rpc URL
 
@@ -91,6 +92,7 @@ sync:
   #  .CommandsCount               count of commands in the commands array
   #  .SyncIsSFDPComplianceEnabled true|false (value of sync.enable_sfdp_compliance)
   #  .ValidatorClient             client name (value of validator.client)
+  #  .ValidatorReleaseTrack       firebam release track; empty for other clients
   #  .ValidatorIdentityPublicKey  public key of the validator's identity as reported by .ValidatorRPCURL
   #  .ValidatorRole               active|passive
   #  .ValidatorRoleIsActive       true|false
@@ -111,6 +113,22 @@ sync:
         TO_VERSION: "{{ .VersionTo }}"
     # ...
 ```
+
+### FireBAM
+
+FireBAM publishes both Frankendancer and native Firedancer releases from the same repository. Select one track explicitly so a sync never migrates between implementations automatically:
+
+```yaml
+validator:
+  client: firebam
+  release_track: frankendancer
+  version_constraint: ">= 0.1100.0, < 1.0.0"
+  rpc_url: http://127.0.0.1:8899
+  identities:
+    active_pubkey: <ACTIVE_IDENTITY_PUBKEY>
+```
+
+Use `release_track: firedancer` with an appropriate `1.x` constraint for native Firedancer. The client and track are configuration-driven because the standard Solana `getVersion` response does not reliably distinguish FireBAM from upstream Firedancer.
 
 Exactly one active identity source must be configured:
 

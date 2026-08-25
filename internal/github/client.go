@@ -46,14 +46,15 @@ type Client struct {
 	// map of cluster to release title regex
 	releaseTitleRegexes map[string]*regexp.Regexp
 	// map of cluster to git tag regex
-	tagRegexes map[string]*regexp.Regexp
-	repoURL    string
-	repoOwner  string
-	repoName   string
-	clientName string
-	client     *github.Client
-	cluster    string
-	logger     *log.Logger
+	tagRegexes   map[string]*regexp.Regexp
+	repoURL      string
+	repoOwner    string
+	repoName     string
+	clientName   string
+	releaseTrack string
+	client       *github.Client
+	cluster      string
+	logger       *log.Logger
 	// cachedTagVersions holds all parsed tag versions from the last GetLatestClientVersion call
 	cachedTagVersions []*version.Version
 	cachedTagInfos    []tagVersionInfo
@@ -67,13 +68,17 @@ type tagVersionInfo struct {
 
 // Options represents the options for creating a new GitHub client
 type Options struct {
-	Cluster string
-	Client  string
+	Cluster      string
+	Client       string
+	ReleaseTrack string
 }
 
 // NewClient creates a new GitHub client
 func NewClient(opts Options) (c *Client, err error) {
 	normalizedClient := constants.NormalizeClientName(opts.Client)
+	if err := constants.ValidateReleaseTrack(normalizedClient, opts.ReleaseTrack); err != nil {
+		return nil, err
+	}
 
 	// Get client repo config
 	repoConfig, ok := clientRepoConfigs[normalizedClient]
@@ -82,11 +87,12 @@ func NewClient(opts Options) (c *Client, err error) {
 	}
 
 	c = &Client{
-		cluster:    opts.Cluster,
-		clientName: normalizedClient,
-		repoURL:    repoConfig.URL,
-		client:     github.NewClient(nil), // No auth token for public repos
-		logger:     log.WithPrefix("github"),
+		cluster:      opts.Cluster,
+		clientName:   normalizedClient,
+		releaseTrack: opts.ReleaseTrack,
+		repoURL:      repoConfig.URL,
+		client:       github.NewClient(nil), // No auth token for public repos
+		logger:       log.WithPrefix("github"),
 	}
 
 	// extract owner and repo from URL
@@ -146,6 +152,14 @@ func (c *Client) GetLatestClientVersion() (latestVersion *version.Version, err e
 			return nil, fmt.Errorf("failed to get releases: %w", err)
 		}
 		return c.latestVersionFromClusterVersionStrings(c.firedancerVersionStringsByCluster(releases))
+	case constants.ClientNameFireBAM:
+		releases, _, err := c.client.Repositories.ListReleases(ctx, c.repoOwner, c.repoName, &github.ListOptions{
+			PerPage: 100,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get firebam releases: %w", err)
+		}
+		return c.latestFireBAMVersionFromClusterVersionStrings(c.firedancerVersionStringsByCluster(releases))
 	case constants.ClientNameRakurai:
 		return c.getLatestRakuraiVersion(ctx)
 	default:
@@ -159,6 +173,9 @@ func (c *Client) firedancerVersionStringsByCluster(releases []*github.Repository
 	for _, cluster := range constants.ValidClusterNames {
 		includePrereleases := cluster == constants.ClusterNameTestnet
 		for _, release := range releases {
+			if !c.matchesConfiguredDancerReleaseTrack(release.GetName()) {
+				continue
+			}
 			if release.GetPrerelease() && !includePrereleases {
 				c.logger.Debug("skipping firedancer pre-release for cluster classification",
 					"cluster", cluster,
@@ -187,6 +204,9 @@ func (c *Client) firedancerVersionStringsByCluster(releases []*github.Repository
 	if testnetTitleRegex != nil && mainnetNotesRegex != nil {
 		mainnetSuitableTestnetVersions := make([]string, 0)
 		for _, release := range releases {
+			if !c.matchesConfiguredDancerReleaseTrack(release.GetName()) {
+				continue
+			}
 			if testnetTitleRegex.MatchString(release.GetName()) && mainnetNotesRegex.MatchString(release.GetBody()) {
 				c.logger.Debug("promoting firedancer testnet release to mainnet by release notes",
 					"cluster", constants.ClusterNameMainnetBeta,
@@ -204,6 +224,80 @@ func (c *Client) firedancerVersionStringsByCluster(releases []*github.Repository
 	}
 
 	return versionStrings
+}
+
+func (c *Client) matchesConfiguredDancerReleaseTrack(title string) bool {
+	if c.clientName != constants.ClientNameFireBAM {
+		return true
+	}
+
+	switch c.releaseTrack {
+	case constants.ReleaseTrackFrankendancer:
+		return strings.HasPrefix(strings.ToLower(title), "frankendancer ")
+	case constants.ReleaseTrackFiredancer:
+		return strings.HasPrefix(strings.ToLower(title), "firedancer ")
+	default:
+		return false
+	}
+}
+
+func (c *Client) latestFireBAMVersionFromClusterVersionStrings(versionStrings map[string][]string) (*version.Version, error) {
+	mainnetTagInfos := c.sortedTagVersionInfosFromVersionStrings(versionStrings[constants.ClusterNameMainnetBeta])
+	testnetTagInfos := c.sortedTagVersionInfosFromVersionStrings(versionStrings[constants.ClusterNameTestnet])
+	for i := range testnetTagInfos {
+		testnetTagInfos[i].TestnetOnly = true
+	}
+
+	// Cache only the selected implementation. If a promoted testnet release is in both
+	// lists, retain its mainnet eligibility rather than replacing it with TestnetOnly.
+	cachedByTag := make(map[string]tagVersionInfo)
+	for _, tagInfo := range append(mainnetTagInfos, testnetTagInfos...) {
+		cached, exists := cachedByTag[tagInfo.TagName]
+		if exists && !cached.TestnetOnly {
+			continue
+		}
+		cachedByTag[tagInfo.TagName] = tagInfo
+	}
+	cachedTagInfos := make([]tagVersionInfo, 0, len(cachedByTag))
+	for _, tagInfo := range cachedByTag {
+		cachedTagInfos = append(cachedTagInfos, tagInfo)
+	}
+	sort.Slice(cachedTagInfos, func(i, j int) bool {
+		return cachedTagInfos[i].Version.LessThan(cachedTagInfos[j].Version)
+	})
+	c.setCachedTagInfos(cachedTagInfos)
+
+	latestMainnet, hasMainnet := latestTagVersionInfo(mainnetTagInfos)
+	latestTestnet, hasTestnet := latestTagVersionInfo(testnetTagInfos)
+	var selected tagVersionInfo
+
+	switch c.cluster {
+	case constants.ClusterNameMainnetBeta:
+		if !hasMainnet {
+			return nil, fmt.Errorf("%w for client %s release track %s cluster %s", ErrNoMatchingTaggedVersion, c.clientName, c.releaseTrack, c.cluster)
+		}
+		selected = latestMainnet
+	case constants.ClusterNameTestnet:
+		if !hasMainnet && !hasTestnet {
+			return nil, fmt.Errorf("%w for client %s release track %s cluster %s", ErrNoMatchingTaggedVersion, c.clientName, c.releaseTrack, c.cluster)
+		}
+		if !hasTestnet || (hasMainnet && latestMainnet.Version.GreaterThan(latestTestnet.Version)) {
+			selected = latestMainnet
+		} else {
+			selected = latestTestnet
+		}
+	default:
+		return nil, fmt.Errorf("unsupported cluster: %s", c.cluster)
+	}
+
+	c.logger.Info("latest version "+selected.Version.Original(),
+		"client", c.clientName,
+		"releaseTrack", c.releaseTrack,
+		"cluster", c.cluster,
+		"selectedTag", selected.TagName,
+		"repoURL", c.versionSourceURL(),
+	)
+	return selected.Version, nil
 }
 
 func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion *version.Version, err error) {
@@ -367,9 +461,14 @@ func (c *Client) HasTaggedVersion(testVersion *version.Version) (hasTaggedVersio
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	perPage := 20
+	if c.clientName == constants.ClientNameFireBAM {
+		perPage = 100
+	}
+
 	// get tags from the client repo and return true if a tag with the version exists
 	tags, _, err := c.client.Repositories.ListTags(ctx, c.repoOwner, c.repoName, &github.ListOptions{
-		PerPage: 20,
+		PerPage: perPage,
 	})
 	if err != nil {
 		return false, fmt.Errorf("failed to get tags: %w", err)
@@ -490,7 +589,7 @@ func (c *Client) TagNameForVersion(v *version.Version) string {
 // SFDP may still publish legacy compatibility-shaped versions like
 // 0.101.0-beta.40101, whose repo tag equivalent is v0.1001.40101.
 func (c *Client) ResolveFiredancerSFDPCompliantVersion(targetVersion *version.Version, minVersion *version.Version, hasMinVersion bool, maxVersion *version.Version, hasMaxVersion bool) (*version.Version, error) {
-	if c.clientName != constants.ClientNameFiredancer {
+	if !constants.IsFiredancerFamily(c.clientName) {
 		return nil, fmt.Errorf("firedancer SFDP resolver called for client %s", c.clientName)
 	}
 
@@ -812,7 +911,7 @@ func (c *Client) NormalizeToTagVersion(v *version.Version) *version.Version {
 		// No cached tag found — return unchanged (version already matches or is not yet released)
 		return v
 
-	case constants.ClientNameFiredancer:
+	case constants.ClientNameFiredancer, constants.ClientNameFireBAM:
 		// If the RPC already reports the tag-shaped version, preserve that exact
 		// release before falling back to looser Firedancer matching.
 		for _, tagged := range c.cachedTagVersions {

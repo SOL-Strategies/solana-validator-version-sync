@@ -47,4 +47,14 @@ var clientRepoConfigs = map[string]ClientRepoConfig{
 			constants.ClusterNameTestnet: "^(.*)dancer Testnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
 		},
 	},
+	constants.ClientNameFireBAM: {
+		URL: "https://github.com/jito-foundation/firebam",
+		ReleaseNotesRegexes: map[string]string{
+			constants.ClusterNameMainnetBeta: "(?is).*This is a Testnet release\\.[^\\n]*(may also be used on mainnet|also (?:be )?suitable for mainnet).*",
+		},
+		ReleaseTitleRegexes: map[string]string{
+			constants.ClusterNameMainnetBeta: "^(.*)dancer Mainnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
+			constants.ClusterNameTestnet:     "^(.*)dancer Testnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
+		},
+	},
 }

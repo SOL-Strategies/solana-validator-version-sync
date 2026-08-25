@@ -51,6 +51,11 @@ func TestValidateClientName(t *testing.T) {
 			wantError: false,
 		},
 		{
+			name:      "accepts firebam client",
+			client:    ClientNameFireBAM,
+			wantError: false,
+		},
+		{
 			name:      "rejects unknown client name",
 			client:    "invalid-client",
 			wantError: true,
@@ -64,5 +69,36 @@ func TestValidateClientName(t *testing.T) {
 				t.Fatalf("ValidateClientName(%q) error = %v, wantError %v", tt.client, err, tt.wantError)
 			}
 		})
+	}
+}
+
+func TestIsFiredancerFamily(t *testing.T) {
+	for _, client := range []string{ClientNameFiredancer, ClientNameFireBAM} {
+		if !IsFiredancerFamily(client) {
+			t.Errorf("IsFiredancerFamily(%q) = false, want true", client)
+		}
+	}
+	if IsFiredancerFamily(ClientNameAgave) {
+		t.Error("IsFiredancerFamily(agave) = true, want false")
+	}
+}
+
+func TestValidateReleaseTrack(t *testing.T) {
+	tests := []struct {
+		client string
+		track  string
+		valid  bool
+	}{
+		{ClientNameFireBAM, ReleaseTrackFrankendancer, true},
+		{ClientNameFireBAM, ReleaseTrackFiredancer, true},
+		{ClientNameFireBAM, "", false},
+		{ClientNameFireBAM, "combined", false},
+		{ClientNameFiredancer, "", true},
+		{ClientNameFiredancer, ReleaseTrackFiredancer, false},
+	}
+	for _, tt := range tests {
+		if err := ValidateReleaseTrack(tt.client, tt.track); (err == nil) != tt.valid {
+			t.Errorf("ValidateReleaseTrack(%q, %q) error = %v, valid = %v", tt.client, tt.track, err, tt.valid)
+		}
 	}
 }

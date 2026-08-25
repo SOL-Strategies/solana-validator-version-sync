@@ -279,6 +279,27 @@ func TestRequirements_SetClient(t *testing.T) {
 	}
 }
 
+func TestRequirementsSetClientFireBAMUsesFiredancerBounds(t *testing.T) {
+	requirements := Requirements{
+		AgaveMinVersion:      "4.0.0",
+		AgaveMaxVersion:      "4.1.0",
+		FiredancerMinVersion: "0.1104.40200",
+		FiredancerMaxVersion: "0.1105.40200",
+	}
+	if err := requirements.SetClient(constants.ClientNameFireBAM); err != nil {
+		t.Fatalf("SetClient(firebam) error = %v", err)
+	}
+	if requirements.Client != constants.ClientNameFireBAM {
+		t.Errorf("Client = %q, want %q", requirements.Client, constants.ClientNameFireBAM)
+	}
+	if requirements.MinVersion.Original() != "0.1104.40200" {
+		t.Errorf("MinVersion = %q, want %q", requirements.MinVersion.Original(), "0.1104.40200")
+	}
+	if requirements.MaxVersion.Original() != "0.1105.40200" {
+		t.Errorf("MaxVersion = %q, want %q", requirements.MaxVersion.Original(), "0.1105.40200")
+	}
+}
+
 func TestRequirements_SetClient_ConstraintsString(t *testing.T) {
 	tests := []struct {
 		name                string

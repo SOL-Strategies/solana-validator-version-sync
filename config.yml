@@ -4,6 +4,8 @@ log:
 
 validator:
   client: jito-solana
+  # Required when client is firebam: frankendancer or firedancer
+  # release_track: frankendancer
   version_constraint: ">= 3.0.10, < 3.2.0"
   rpc_url: http://127.0.0.1:8899
   identities:

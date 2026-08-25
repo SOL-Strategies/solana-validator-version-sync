@@ -97,6 +97,7 @@ func TestCommandTemplateData_StructFields(t *testing.T) {
 		CommandIndex:                1,
 		ValidatorClient:             "agave",
 		ValidatorRPCURL:             "http://localhost:8899",
+		ValidatorReleaseTrack:       "frankendancer",
 		ValidatorRole:               "active",
 		ValidatorRoleIsPassive:      false,
 		ValidatorRoleIsActive:       true,
@@ -115,6 +116,9 @@ func TestCommandTemplateData_StructFields(t *testing.T) {
 	}
 	if data.ValidatorRPCURL != "http://localhost:8899" {
 		t.Errorf("Expected ValidatorRPCURL to be http://localhost:8899, got %s", data.ValidatorRPCURL)
+	}
+	if data.ValidatorReleaseTrack != "frankendancer" {
+		t.Errorf("Expected ValidatorReleaseTrack to be frankendancer, got %s", data.ValidatorReleaseTrack)
 	}
 	if data.ValidatorRole != "active" {
 		t.Errorf("Expected ValidatorRole to be active, got %s", data.ValidatorRole)
@@ -153,7 +157,7 @@ func TestCommand_Parse(t *testing.T) {
 			command: Command{
 				Name: "test-command",
 				Cmd:  "echo",
-				Args: []string{"{{.VersionTo}}", "{{.ClusterName}}"},
+				Args: []string{"{{.VersionTo}}", "{{.ClusterName}}", "{{.ValidatorReleaseTrack}}"},
 				Environment: map[string]string{
 					"CLUSTER": "{{.ClusterName}}",
 					"VERSION": "{{.VersionTo}}",
