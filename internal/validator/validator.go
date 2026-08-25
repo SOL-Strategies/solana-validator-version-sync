@@ -71,8 +71,9 @@ func New(opts Options) (v *Validator, err error) {
 	// Create clients
 	v.rpcClient = rpc.NewClient(v.cfg.RPCURL)
 	v.githubClient, err = github.NewClient(github.Options{
-		Cluster: opts.Cluster,
-		Client:  v.cfg.Client,
+		Cluster:      opts.Cluster,
+		Client:       v.cfg.Client,
+		ReleaseTrack: v.cfg.ReleaseTrack,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create github client: %w", err)
@@ -274,6 +275,7 @@ func (v *Validator) SyncVersion() (err error) {
 			CommandsCount:               commandsCount,
 			ValidatorClient:             v.cfg.Client,
 			ValidatorRPCURL:             v.cfg.RPCURL,
+			ValidatorReleaseTrack:       v.cfg.ReleaseTrack,
 			ValidatorRole:               v.Role(),
 			ValidatorRoleIsPassive:      v.IsPassive(),
 			ValidatorRoleIsActive:       v.IsActive(),
@@ -301,7 +303,7 @@ func (v *Validator) getSFDPCompliantVersion(targetVersion *version.Version) (sfd
 
 	v.logger.Debug("got latest requirements from SFDP", "sfdpRequirements", sfdpRequirements.Constraints.String())
 
-	if constants.NormalizeClientName(v.cfg.Client) == constants.ClientNameFiredancer {
+	if constants.IsFiredancerFamily(v.cfg.Client) {
 		sfdpCompliantVersion, err = v.githubClient.ResolveFiredancerSFDPCompliantVersion(
 			targetVersion,
 			sfdpRequirements.MinVersion,

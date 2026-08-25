@@ -48,6 +48,57 @@ func TestValidator_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid firebam frankendancer validator",
+			validator: Validator{
+				Client:            constants.ClientNameFireBAM,
+				ReleaseTrack:      constants.ReleaseTrackFrankendancer,
+				RPCURL:            "http://127.0.0.1:8899",
+				VersionConstraint: ">= 0.1.0, < 1.0.0",
+				Identities:        Identities{ActivePublicKey: validIdentity},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid firebam firedancer validator",
+			validator: Validator{
+				Client:            constants.ClientNameFireBAM,
+				ReleaseTrack:      constants.ReleaseTrackFiredancer,
+				RPCURL:            "http://127.0.0.1:8899",
+				VersionConstraint: ">= 1.0.0",
+				Identities:        Identities{ActivePublicKey: validIdentity},
+			},
+			wantErr: false,
+		},
+		{
+			name: "firebam requires release track",
+			validator: Validator{
+				Client:     constants.ClientNameFireBAM,
+				RPCURL:     "http://127.0.0.1:8899",
+				Identities: Identities{ActivePublicKey: validIdentity},
+			},
+			wantErr: true,
+		},
+		{
+			name: "firebam rejects unknown release track",
+			validator: Validator{
+				Client:       constants.ClientNameFireBAM,
+				ReleaseTrack: "combined",
+				RPCURL:       "http://127.0.0.1:8899",
+				Identities:   Identities{ActivePublicKey: validIdentity},
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-firebam rejects release track",
+			validator: Validator{
+				Client:       constants.ClientNameFiredancer,
+				ReleaseTrack: constants.ReleaseTrackFiredancer,
+				RPCURL:       "http://127.0.0.1:8899",
+				Identities:   Identities{ActivePublicKey: validIdentity},
+			},
+			wantErr: true,
+		},
+		{
 			name: "valid rakurai-validator validator",
 			validator: Validator{
 				Client:            constants.ClientNameRakurai,

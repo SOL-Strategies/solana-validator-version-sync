@@ -1,6 +1,7 @@
 package github
 
 import (
+	"errors"
 	"regexp"
 	"testing"
 
@@ -70,6 +71,24 @@ func TestNewClient(t *testing.T) {
 			},
 			expectedClient: constants.ClientNameFiredancer,
 			wantErr:        false,
+		},
+		{
+			name: "valid firebam client for mainnet-beta",
+			opts: Options{
+				Cluster:      constants.ClusterNameMainnetBeta,
+				Client:       constants.ClientNameFireBAM,
+				ReleaseTrack: constants.ReleaseTrackFrankendancer,
+			},
+			expectedClient: constants.ClientNameFireBAM,
+			wantErr:        false,
+		},
+		{
+			name: "firebam client requires release track",
+			opts: Options{
+				Cluster: constants.ClusterNameMainnetBeta,
+				Client:  constants.ClientNameFireBAM,
+			},
+			wantErr: true,
 		},
 		{
 			name: "invalid client name",
@@ -791,6 +810,107 @@ func TestFiredancerVersionStringsByClusterIncludesTitleWithoutVersionPrefix(t *t
 	}
 	if gotTag := client.TagNameForVersion(got); gotTag != "v1.1.4" {
 		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v1.1.4")
+	}
+}
+
+func TestFireBAMReleaseTracksAreIsolated(t *testing.T) {
+	releases := []*github.RepositoryRelease{
+		{
+			Name:    github.String("Frankendancer Mainnet v0.1105.40200"),
+			TagName: github.String("v0.1105.40200"),
+			Body:    github.String("This is a mainnet ready release."),
+		},
+		{
+			Name:       github.String("Frankendancer Testnet v0.1104.40200"),
+			TagName:    github.String("v0.1104.40200"),
+			Body:       github.String("This is a Testnet release."),
+			Prerelease: github.Bool(true),
+		},
+		{
+			Name:    github.String("Firedancer Mainnet 1.1.4"),
+			TagName: github.String("v1.1.4"),
+			Body:    github.String("This is a mainnet ready release."),
+		},
+	}
+
+	tests := []struct {
+		name         string
+		cluster      string
+		releaseTrack string
+		wantVersion  string
+		wantCached   int
+	}{
+		{
+			name:         "frankendancer mainnet excludes native firedancer",
+			cluster:      constants.ClusterNameMainnetBeta,
+			releaseTrack: constants.ReleaseTrackFrankendancer,
+			wantVersion:  "v0.1105.40200",
+			wantCached:   2,
+		},
+		{
+			name:         "frankendancer testnet prefers newer shared mainnet release",
+			cluster:      constants.ClusterNameTestnet,
+			releaseTrack: constants.ReleaseTrackFrankendancer,
+			wantVersion:  "v0.1105.40200",
+			wantCached:   2,
+		},
+		{
+			name:         "firedancer testnet falls back to mainnet release",
+			cluster:      constants.ClusterNameTestnet,
+			releaseTrack: constants.ReleaseTrackFiredancer,
+			wantVersion:  "v1.1.4",
+			wantCached:   1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(Options{
+				Cluster:      tt.cluster,
+				Client:       constants.ClientNameFireBAM,
+				ReleaseTrack: tt.releaseTrack,
+			})
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+
+			versionStrings := client.firedancerVersionStringsByCluster(releases)
+			got, err := client.latestFireBAMVersionFromClusterVersionStrings(versionStrings)
+			if err != nil {
+				t.Fatalf("latestFireBAMVersionFromClusterVersionStrings() error = %v", err)
+			}
+			if got.Original() != tt.wantVersion {
+				t.Errorf("selected version = %q, want %q", got.Original(), tt.wantVersion)
+			}
+			if len(client.cachedTagInfos) != tt.wantCached {
+				t.Errorf("cached tags = %d, want %d: %#v", len(client.cachedTagInfos), tt.wantCached, client.cachedTagInfos)
+			}
+			if gotTag := client.TagNameForVersion(got); gotTag != tt.wantVersion {
+				t.Errorf("TagNameForVersion() = %q, want %q", gotTag, tt.wantVersion)
+			}
+		})
+	}
+}
+
+func TestFireBAMNoMatchingTrackReturnsSoftSkip(t *testing.T) {
+	client, err := NewClient(Options{
+		Cluster:      constants.ClusterNameMainnetBeta,
+		Client:       constants.ClientNameFireBAM,
+		ReleaseTrack: constants.ReleaseTrackFrankendancer,
+	})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	releases := []*github.RepositoryRelease{
+		{
+			Name:    github.String("Firedancer Mainnet 1.1.4"),
+			TagName: github.String("v1.1.4"),
+		},
+	}
+	_, err = client.latestFireBAMVersionFromClusterVersionStrings(client.firedancerVersionStringsByCluster(releases))
+	if !errors.Is(err, ErrNoMatchingTaggedVersion) {
+		t.Fatalf("error = %v, want ErrNoMatchingTaggedVersion", err)
 	}
 }
 

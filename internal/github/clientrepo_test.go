@@ -51,6 +51,7 @@ func TestClientRepoConfigs_AllClients(t *testing.T) {
 		constants.ClientNameJitoSolana,
 		constants.ClientNameRakurai,
 		constants.ClientNameFiredancer,
+		constants.ClientNameFireBAM,
 	}
 
 	for _, clientName := range expectedClients {
@@ -71,6 +72,18 @@ func TestClientRepoConfigs_AllClients(t *testing.T) {
 				t.Errorf("ClientRepoConfig URL is not a GitHub URL for client: %s: %s", clientName, config.URL)
 			}
 		})
+	}
+}
+
+func TestClientRepoConfigs_FireBAMConfig(t *testing.T) {
+	config := clientRepoConfigs[constants.ClientNameFireBAM]
+	if config.URL != "https://github.com/jito-foundation/firebam" {
+		t.Errorf("FireBAM URL = %q, want %q", config.URL, "https://github.com/jito-foundation/firebam")
+	}
+	for _, cluster := range constants.ValidClusterNames {
+		if _, exists := config.ReleaseTitleRegexes[cluster]; !exists {
+			t.Errorf("FireBAM ReleaseTitleRegex not found for cluster %s", cluster)
+		}
 	}
 }
 
@@ -495,6 +508,13 @@ func TestNormalizeToTagVersion(t *testing.T) {
 			cachedVersions: []string{"v0.902.40002"},
 			input:          "0.902.0",
 			want:           "0.902.40002",
+		},
+		{
+			name:           "firebam: uses firedancer feature-set normalization",
+			clientName:     constants.ClientNameFireBAM,
+			cachedVersions: []string{"v0.1105.40200"},
+			input:          "0.33670.40200",
+			want:           "0.1105.40200",
 		},
 		{
 			name:           "firedancer: picks correct tag from multiple cached versions via major.minor",
@@ -1570,6 +1590,53 @@ func TestGetLatestClientVersion_FiredancerIncludesMainnetSuitablePrerelease(t *t
 	}
 	if gotTag := client.TagNameForVersion(got); gotTag != "v0.1005.40100" {
 		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v0.1005.40100")
+	}
+}
+
+func TestGetLatestClientVersionFireBAMUsesConfiguredTrack(t *testing.T) {
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Path != "/repos/jito-foundation/firebam/releases" {
+				return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
+			}
+			if r.URL.Query().Get("per_page") != "100" {
+				return nil, fmt.Errorf("per_page = %q, want 100", r.URL.Query().Get("per_page"))
+			}
+			body := `[
+				{"name":"Frankendancer Mainnet v0.1105.40200","tag_name":"v0.1105.40200","body":"This is a mainnet ready release.","prerelease":false},
+				{"name":"Firedancer Mainnet 1.1.4","tag_name":"v1.1.4","body":"This is a mainnet ready release.","prerelease":false}
+			]`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    r,
+			}, nil
+		}),
+	}
+
+	client, err := NewClient(Options{
+		Cluster:      constants.ClusterNameMainnetBeta,
+		Client:       constants.ClientNameFireBAM,
+		ReleaseTrack: constants.ReleaseTrackFrankendancer,
+	})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	ghClient := gogithub.NewClient(httpClient)
+	baseURL, err := url.Parse("https://api.github.test/")
+	if err != nil {
+		t.Fatalf("failed to parse test GitHub API URL: %v", err)
+	}
+	ghClient.BaseURL = baseURL
+	client.client = ghClient
+
+	got, err := client.GetLatestClientVersion()
+	if err != nil {
+		t.Fatalf("GetLatestClientVersion() error = %v", err)
+	}
+	if got.Original() != "v0.1105.40200" {
+		t.Errorf("GetLatestClientVersion() = %q, want %q", got.Original(), "v0.1105.40200")
 	}
 }
 

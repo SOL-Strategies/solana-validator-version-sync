@@ -37,7 +37,7 @@ func (r *Requirements) SetClient(client string) (err error) {
 		r.Client = constants.ClientNameAgave
 		minVersion = r.AgaveMinVersion
 		maxVersion = r.AgaveMaxVersion
-	case constants.ClientNameFiredancer:
+	case constants.ClientNameFiredancer, constants.ClientNameFireBAM:
 		r.Client = client
 		minVersion = r.FiredancerMinVersion
 		maxVersion = r.FiredancerMaxVersion
