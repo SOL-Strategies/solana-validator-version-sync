@@ -114,6 +114,10 @@ sync:
     # ...
 ```
 
+For `jito-solana`, Agave release notes are canonical for cluster eligibility. The
+sync manager selects the newest Agave-eligible version for which an equivalent
+Jito tag exists, regardless of the Jito release title prefix.
+
 ### FireBAM
 
 FireBAM publishes both Frankendancer and native Firedancer releases from the same repository. Select one track explicitly so a sync never migrates between implementations automatically:

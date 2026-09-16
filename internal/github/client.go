@@ -308,11 +308,6 @@ func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion 
 		return nil, fmt.Errorf("failed to get jito-solana releases: %w", err)
 	}
 
-	versionStrings, err := jitoVersionStringsByCluster(jitoReleases, c.logger)
-	if err != nil {
-		return nil, err
-	}
-
 	agaveOwner, agaveRepo, err := ownerAndRepoFromURL(clientRepoConfigs[constants.ClientNameAgave].URL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract agave owner/repo from URL: %w", err)
@@ -325,8 +320,8 @@ func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion 
 		return nil, fmt.Errorf("failed to get agave releases for jito-solana classification: %w", err)
 	}
 
-	// Also keep the Agave-derived mapping for releases that are intentionally
-	// promoted across clusters by upstream Agave notes.
+	// Agave is the canonical source for cluster eligibility. Jito releases are
+	// only artifacts that can satisfy an Agave version when their tags match.
 	agaveReleaseNotesRegexes := make(map[string]*regexp.Regexp)
 	for _, cluster := range constants.ValidClusterNames {
 		agaveReleaseNotesRegex, err := regexp.Compile(clientRepoConfigs[constants.ClientNameAgave].ReleaseNotesRegexes[cluster])
@@ -337,10 +332,8 @@ func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion 
 	}
 
 	agaveVersionStrings := agaveVersionStringsByCluster(agaveReleases, agaveReleaseNotesRegexes, c.logger)
+	versionStrings := make(map[string][]string)
 	for _, cluster := range constants.ValidClusterNames {
-		if len(versionStrings[cluster]) > 0 {
-			continue
-		}
 		versionStrings[cluster] = jitoVersionStringsFromAgaveVersionStrings(
 			jitoReleases,
 			agaveVersionStrings[cluster],
@@ -537,6 +530,23 @@ func (c *Client) GetRepoURL() string {
 }
 
 func (c *Client) TagNameForVersion(v *version.Version) string {
+	if c.clientName == constants.ClientNameJitoSolana {
+		var selected *tagVersionInfo
+		for i := range c.cachedTagInfos {
+			tagInfo := &c.cachedTagInfos[i]
+			if !c.jitoTagInfoMatchesVersion(*tagInfo, v) {
+				continue
+			}
+			if selected == nil || versionTagLess(selected.TagName, tagInfo.TagName) {
+				selected = tagInfo
+			}
+		}
+		if selected != nil {
+			return selected.TagName
+		}
+		return v.Original()
+	}
+
 	if c.clientName == constants.ClientNameRakurai {
 		matchingTagInfos := make([]tagVersionInfo, 0)
 		for _, tagInfo := range c.cachedTagInfos {
@@ -569,14 +579,6 @@ func (c *Client) TagNameForVersion(v *version.Version) string {
 	for _, tagInfo := range c.cachedTagInfos {
 		if tagInfo.Version.Equal(v) {
 			return tagInfo.TagName
-		}
-	}
-
-	if c.clientName == constants.ClientNameJitoSolana {
-		for _, tagInfo := range c.cachedTagInfos {
-			if c.jitoTagInfoMatchesVersion(tagInfo, v) {
-				return tagInfo.TagName
-			}
 		}
 	}
 
@@ -1088,26 +1090,6 @@ func agaveVersionStringsByCluster(releases []*github.RepositoryRelease, releaseN
 	}
 
 	return versionStrings
-}
-
-func jitoVersionStringsByCluster(releases []*github.RepositoryRelease, logger *log.Logger) (map[string][]string, error) {
-	versionStrings := make(map[string][]string)
-	for _, cluster := range constants.ValidClusterNames {
-		titleRegex, err := regexp.Compile(clientRepoConfigs[constants.ClientNameJitoSolana].ReleaseTitleRegexes[cluster])
-		if err != nil {
-			return nil, fmt.Errorf("failed to compile jito-solana release title regex for %s: %w", cluster, err)
-		}
-
-		versionStrings[cluster] = versionsFromReleaseTitleRegexWithPrerelease(releases, titleRegex, true)
-		if logger != nil {
-			logger.Debug("classified jito-solana releases by title",
-				"cluster", cluster,
-				"versions", versionStrings[cluster],
-			)
-		}
-	}
-
-	return versionStrings, nil
 }
 
 func jitoVersionStringsFromAgaveVersionStrings(jitoReleases []*github.RepositoryRelease, agaveVersionStrings []string, includePrereleases bool) (versionStrings []string) {
