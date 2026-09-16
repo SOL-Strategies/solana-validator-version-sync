@@ -119,12 +119,9 @@ func TestClientRepoConfigs_JitoSolanaConfig(t *testing.T) {
 		t.Errorf("JitoSolana URL = %v, want %v", config.URL, expectedURL)
 	}
 
-	// Verify ReleaseTitleRegexes exist for both clusters
-	expectedClusters := []string{constants.ClusterNameMainnetBeta, constants.ClusterNameTestnet}
-	for _, cluster := range expectedClusters {
-		if _, exists := config.ReleaseTitleRegexes[cluster]; !exists {
-			t.Errorf("JitoSolana ReleaseTitleRegex not found for cluster: %s", cluster)
-		}
+	// JitoSolana eligibility is determined by canonical Agave release metadata.
+	if config.ReleaseTitleRegexes != nil {
+		t.Errorf("JitoSolana should not have ReleaseTitleRegexes, but found: %v", config.ReleaseTitleRegexes)
 	}
 
 	// JitoSolana should not have ReleaseNotesRegexes
@@ -226,18 +223,6 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			cluster:    constants.ClusterNameTestnet,
 			regexType:  "ReleaseNotesRegex",
 			regex:      "(?is).*(This is a testnet release|recommended for testnet|suitable for testnet).*",
-		},
-		{
-			clientName: constants.ClientNameJitoSolana,
-			cluster:    constants.ClusterNameMainnetBeta,
-			regexType:  "ReleaseTitleRegex",
-			regex:      "^Mainnet\\s+-\\s+(?:Release\\s+)?v([0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?)-jito(?:\\.[0-9]+)?$",
-		},
-		{
-			clientName: constants.ClientNameJitoSolana,
-			cluster:    constants.ClusterNameTestnet,
-			regexType:  "ReleaseTitleRegex",
-			regex:      "^Testnet\\s+-\\s+(?:Release\\s+)?v([0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-zA-Z][a-zA-Z0-9.]*)?)-jito(?:\\.[0-9]+)?$",
 		},
 		{
 			clientName: constants.ClientNameRakurai,
@@ -1063,6 +1048,29 @@ func TestTagNameForVersion_JitoSolana(t *testing.T) {
 	}
 }
 
+func TestTagNameForVersion_JitoSolanaPrefersHighestHotfix(t *testing.T) {
+	mustVersion := func(s string) *goversion.Version {
+		v, err := goversion.NewVersion(s)
+		if err != nil {
+			t.Fatalf("failed to parse version %q: %v", s, err)
+		}
+		return v
+	}
+
+	client := &Client{
+		clientName: constants.ClientNameJitoSolana,
+		cachedTagInfos: []tagVersionInfo{
+			{TagName: "v4.3.0-rc.1-jito", Version: mustVersion("v4.3.0-rc.1")},
+			{TagName: "v4.3.0-rc.1-jito.1", Version: mustVersion("v4.3.0-rc.1")},
+			{TagName: "v4.3.0-rc.1-jito.2", Version: mustVersion("v4.3.0-rc.1")},
+		},
+	}
+
+	if got := client.TagNameForVersion(mustVersion("v4.3.0-rc.1")); got != "v4.3.0-rc.1-jito.2" {
+		t.Fatalf("TagNameForVersion() = %q, want %q", got, "v4.3.0-rc.1-jito.2")
+	}
+}
+
 func TestHasTaggedVersion_JitoSolanaCachesMatchingTag(t *testing.T) {
 	mustVersion := func(s string) *goversion.Version {
 		v, err := goversion.NewVersion(s)
@@ -1258,7 +1266,7 @@ func TestGetLatestClientVersion_JitoSolanaIncludesTestnetPrereleases(t *testing.
 	}
 }
 
-func TestGetLatestClientVersion_JitoSolanaUsesTestnetTitleWhenAgaveNotesOmitCluster(t *testing.T) {
+func TestGetLatestClientVersion_JitoSolanaIgnoresTitleWhenAgaveNotesOmitCluster(t *testing.T) {
 	httpClient := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			var body string
@@ -1309,32 +1317,32 @@ func TestGetLatestClientVersion_JitoSolanaUsesTestnetTitleWhenAgaveNotesOmitClus
 	if err != nil {
 		t.Fatalf("GetLatestClientVersion() error = %v", err)
 	}
-	want, err := goversion.NewVersion("v4.2.0-beta.1")
+	want, err := goversion.NewVersion("v4.2.0-beta.0")
 	if err != nil {
 		t.Fatalf("failed to parse wanted version: %v", err)
 	}
 	if !got.Equal(want) {
 		t.Fatalf("GetLatestClientVersion() = %q, want %q", got.Original(), want.Original())
 	}
-	if gotTag := client.TagNameForVersion(got); gotTag != "v4.2.0-beta.1-jito" {
-		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v4.2.0-beta.1-jito")
+	if gotTag := client.TagNameForVersion(got); gotTag != "v4.2.0-beta.0-jito" {
+		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v4.2.0-beta.0-jito")
 	}
 }
 
-func TestGetLatestClientVersion_JitoSolanaPrefersMainnetTitleOverAgaveDerivedCandidate(t *testing.T) {
+func TestGetLatestClientVersion_JitoSolanaUsesAgaveMainnetCandidateDespiteJitoTitle(t *testing.T) {
 	httpClient := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			var body string
 			switch r.URL.Path {
 			case "/repos/jito-foundation/jito-solana/releases":
 				body = `[
-					{"name":"Mainnet - v4.0.2-jito","tag_name":"v4.0.2-jito","prerelease":false},
-					{"name":"Testnet - v4.1.0-rc.1-jito","tag_name":"v4.1.0-rc.1-jito","prerelease":true}
+					{"name":"Mainnet - v4.2.2-jito","tag_name":"v4.2.2-jito","prerelease":false},
+					{"name":"Testnet - v4.3.0-rc.1-jito","tag_name":"v4.3.0-rc.1-jito","prerelease":true}
 				]`
 			case "/repos/anza-xyz/agave/releases":
 				body = `[
-					{"name":"Release v4.0.2","tag_name":"v4.0.2","body":"This is a stable release suitable for use on Mainnet Beta.","prerelease":false},
-					{"name":"Release v4.1.0-rc.1","tag_name":"v4.1.0-rc.1","body":"Mainnet Upgrade Candidate. It is also recommended for Testnet and Devnet.","prerelease":true}
+					{"name":"Release v4.2.2","tag_name":"v4.2.2","body":"This is a stable release suitable for use on Mainnet Beta.","prerelease":false},
+					{"name":"Release v4.3.0-rc.1","tag_name":"v4.3.0-rc.1","body":"This is Mainnet-beta Upgrade Candidate release recommended for 25% adoption. It is also recommended for Testnet and Devnet.","prerelease":true}
 				]`
 			default:
 				return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
@@ -1370,19 +1378,19 @@ func TestGetLatestClientVersion_JitoSolanaPrefersMainnetTitleOverAgaveDerivedCan
 	if err != nil {
 		t.Fatalf("GetLatestClientVersion() error = %v", err)
 	}
-	want, err := goversion.NewVersion("v4.0.2")
+	want, err := goversion.NewVersion("v4.3.0-rc.1")
 	if err != nil {
 		t.Fatalf("failed to parse wanted version: %v", err)
 	}
 	if !got.Equal(want) {
 		t.Fatalf("GetLatestClientVersion() = %q, want %q", got.Original(), want.Original())
 	}
-	if gotTag := client.TagNameForVersion(got); gotTag != "v4.0.2-jito" {
-		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v4.0.2-jito")
+	if gotTag := client.TagNameForVersion(got); gotTag != "v4.3.0-rc.1-jito" {
+		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v4.3.0-rc.1-jito")
 	}
 }
 
-func TestGetLatestClientVersion_JitoSolanaFallsBackToAgaveDerivedCandidateWhenTitleMissing(t *testing.T) {
+func TestGetLatestClientVersion_JitoSolanaUsesAgaveCandidateRegardlessOfTitle(t *testing.T) {
 	httpClient := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			var body string
@@ -1688,95 +1696,9 @@ func TestGetLatestClientVersion_FiredancerIncludesMainnetTitleWithoutVersionPref
 	}
 }
 
-func TestClientRepoConfigs_JitoSolanaReleaseTitleRegex(t *testing.T) {
+func TestClientRepoConfigs_JitoSolanaHasNoReleaseTitleRegex(t *testing.T) {
 	config := clientRepoConfigs[constants.ClientNameJitoSolana]
-
-	tests := []struct {
-		name            string
-		cluster         string
-		releaseTitle    string
-		shouldMatch     bool
-		expectedVersion string
-	}{
-		{
-			name:            "Mainnet stable",
-			cluster:         constants.ClusterNameMainnetBeta,
-			releaseTitle:    "Mainnet - v3.1.10-jito",
-			shouldMatch:     true,
-			expectedVersion: "3.1.10",
-		},
-		{
-			name:            "Testnet stable",
-			cluster:         constants.ClusterNameTestnet,
-			releaseTitle:    "Testnet - v3.1.7-jito",
-			shouldMatch:     true,
-			expectedVersion: "3.1.7",
-		},
-		{
-			name:            "Testnet pre-release beta",
-			cluster:         constants.ClusterNameTestnet,
-			releaseTitle:    "Testnet - v4.0.0-beta.2-jito",
-			shouldMatch:     true,
-			expectedVersion: "4.0.0-beta.2",
-		},
-		{
-			name:            "Testnet release prefix",
-			cluster:         constants.ClusterNameTestnet,
-			releaseTitle:    "Testnet - Release v4.2.0-beta.0-jito",
-			shouldMatch:     true,
-			expectedVersion: "4.2.0-beta.0",
-		},
-		{
-			name:            "Mainnet extra spacing",
-			cluster:         constants.ClusterNameMainnetBeta,
-			releaseTitle:    "Mainnet -  v4.0.0-jito",
-			shouldMatch:     true,
-			expectedVersion: "4.0.0",
-		},
-		{
-			name:            "Mainnet jito.N patch suffix",
-			cluster:         constants.ClusterNameMainnetBeta,
-			releaseTitle:    "Mainnet - v3.0.6-jito.1",
-			shouldMatch:     true,
-			expectedVersion: "3.0.6",
-		},
-		{
-			name:         "Mainnet missing jito suffix",
-			cluster:      constants.ClusterNameMainnetBeta,
-			releaseTitle: "Mainnet - v3.1.10",
-			shouldMatch:  false,
-		},
-		{
-			name:         "Wrong network prefix",
-			cluster:      constants.ClusterNameMainnetBeta,
-			releaseTitle: "Testnet - v3.1.10-jito",
-			shouldMatch:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			regexStr, exists := config.ReleaseTitleRegexes[tt.cluster]
-			if !exists {
-				t.Fatalf("ReleaseTitleRegex not found for cluster: %s", tt.cluster)
-			}
-
-			re := regexp.MustCompile(regexStr)
-			matches := re.FindStringSubmatch(tt.releaseTitle)
-
-			if tt.shouldMatch {
-				if matches == nil {
-					t.Errorf("Expected regex to match %q, but it didn't", tt.releaseTitle)
-					return
-				}
-				if matches[1] != tt.expectedVersion {
-					t.Errorf("Expected version %q, got %q", tt.expectedVersion, matches[1])
-				}
-			} else {
-				if matches != nil {
-					t.Errorf("Expected regex to NOT match %q, but it did (matched: %v)", tt.releaseTitle, matches)
-				}
-			}
-		})
+	if config.ReleaseTitleRegexes != nil {
+		t.Fatalf("JitoSolana ReleaseTitleRegexes = %v, want nil", config.ReleaseTitleRegexes)
 	}
 }
