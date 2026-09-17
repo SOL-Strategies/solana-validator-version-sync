@@ -519,6 +519,96 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestUsesNativeFiredancerRPC(t *testing.T) {
+	minimumVersion := goversion.Must(goversion.NewVersion("1.0.0"))
+	olderVersion := goversion.Must(goversion.NewVersion("0.110.0"))
+	tests := []struct {
+		name         string
+		client       string
+		releaseTrack string
+		validatorVer *goversion.Version
+		want         bool
+	}{
+		{
+			name:         "native firedancer v1",
+			client:       constants.ClientNameFiredancer,
+			validatorVer: minimumVersion,
+			want:         true,
+		},
+		{
+			name:         "native firedancer older version",
+			client:       constants.ClientNameFiredancer,
+			validatorVer: olderVersion,
+			want:         false,
+		},
+		{
+			name:         "firebam firedancer track v1",
+			client:       constants.ClientNameFireBAM,
+			releaseTrack: constants.ReleaseTrackFiredancer,
+			validatorVer: minimumVersion,
+			want:         true,
+		},
+		{
+			name:         "firebam frankendancer track v1",
+			client:       constants.ClientNameFireBAM,
+			releaseTrack: constants.ReleaseTrackFrankendancer,
+			validatorVer: minimumVersion,
+			want:         false,
+		},
+		{
+			name:         "agave v1",
+			client:       constants.ClientNameAgave,
+			validatorVer: minimumVersion,
+			want:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validator := &Validator{
+				cfg: config.Validator{
+					Client:       tt.client,
+					ReleaseTrack: tt.releaseTrack,
+				},
+				State: State{Version: tt.validatorVer},
+			}
+			if got := validator.usesNativeFiredancerRPC(); got != tt.want {
+				t.Errorf("usesNativeFiredancerRPC() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRequireNativeFiredancerActiveIdentity(t *testing.T) {
+	var output bytes.Buffer
+	validator := &Validator{
+		cfg: config.Validator{
+			Client: constants.ClientNameFiredancer,
+		},
+		State:  State{VersionString: "1.0.0"},
+		logger: log.New(&output).WithPrefix("validator"),
+	}
+
+	if err := validator.requireNativeFiredancerActiveIdentity(); err == nil {
+		t.Fatal("requireNativeFiredancerActiveIdentity() should reject vote-account-only configuration")
+	}
+	if !strings.Contains(output.String(), "does not support getVoteAccounts") {
+		t.Fatalf("warning = %q, want unsupported getVoteAccounts warning", output.String())
+	}
+
+	if err := validator.requireNativeFiredancerActiveIdentity(); err == nil {
+		t.Fatal("requireNativeFiredancerActiveIdentity() should continue rejecting missing active identity")
+	}
+	if got := strings.Count(output.String(), "does not support getVoteAccounts"); got != 1 {
+		t.Fatalf("warning count = %d, want 1", got)
+	}
+
+	validator.ActiveIdentityPublicKey = "active-node"
+	if err := validator.requireNativeFiredancerActiveIdentity(); err != nil {
+		t.Fatalf("requireNativeFiredancerActiveIdentity() with active identity error = %v", err)
+	}
+}
+
 func TestNew_UnknownValidatorClient(t *testing.T) {
 	activeKeypair, _ := solana.NewRandomPrivateKey()
 	passiveKeypair, _ := solana.NewRandomPrivateKey()
