@@ -38,14 +38,15 @@ type Validator struct {
 	PassiveIdentityPublicKey string
 	State                    State
 
-	versionConstraint           version.Constraints
-	syncConfig                  config.Sync
-	cfg                         config.Validator
-	logger                      *log.Logger
-	rpcClient                   *rpc.Client
-	sfdpClient                  *sfdp.Client
-	githubClient                *github.Client
-	localIdentityHasVoteAccount bool
+	versionConstraint             version.Constraints
+	syncConfig                    config.Sync
+	cfg                           config.Validator
+	logger                        *log.Logger
+	rpcClient                     *rpc.Client
+	sfdpClient                    *sfdp.Client
+	githubClient                  *github.Client
+	localIdentityHasVoteAccount   bool
+	nativeFiredancerWarningLogged bool
 }
 
 // New creates a new Validator
@@ -401,7 +402,11 @@ func (v *Validator) refreshState() error {
 	}
 	v.State.IdentityPublicKey = identityPubkey
 
-	if v.cfg.VoteAccountPublicKey != "" {
+	if v.usesNativeFiredancerRPC() {
+		if err := v.requireNativeFiredancerActiveIdentity(); err != nil {
+			return err
+		}
+	} else if v.cfg.VoteAccountPublicKey != "" {
 		if err := v.resolveIdentitiesFromVoteAccount(); err != nil {
 			return err
 		}
@@ -426,6 +431,44 @@ func (v *Validator) refreshState() error {
 	v.logger.Debug("validator state refreshed")
 
 	return nil
+}
+
+// usesNativeFiredancerRPC reports whether the running validator is a native
+// Firedancer v1+ implementation whose RPC does not provide getVoteAccounts.
+// FireBAM's frankendancer track intentionally remains on the standard RPC
+// path because it runs the Agave validator.
+func (v *Validator) usesNativeFiredancerRPC() bool {
+	if v.State.Version == nil || v.State.Version.LessThan(nativeFiredancerMinimumVersion()) {
+		return false
+	}
+
+	if v.cfg.Client == constants.ClientNameFiredancer {
+		return true
+	}
+
+	return v.cfg.Client == constants.ClientNameFireBAM && v.cfg.ReleaseTrack == constants.ReleaseTrackFiredancer
+}
+
+func nativeFiredancerMinimumVersion() *version.Version {
+	return version.Must(version.NewVersion("1.0.0"))
+}
+
+func (v *Validator) requireNativeFiredancerActiveIdentity() error {
+	if v.ActiveIdentityPublicKey != "" {
+		return nil
+	}
+
+	if !v.nativeFiredancerWarningLogged {
+		v.logger.Warn(
+			"native Firedancer v1+ does not support getVoteAccounts; configure validator.identities.active_pubkey or validator.identities.active instead",
+			"client", v.cfg.Client,
+			"releaseTrack", v.cfg.ReleaseTrack,
+			"version", v.State.VersionString,
+		)
+		v.nativeFiredancerWarningLogged = true
+	}
+
+	return fmt.Errorf("native Firedancer v1+ requires validator.identities.active_pubkey or validator.identities.active; validator.vote_account_pubkey cannot resolve the active identity from this RPC")
 }
 
 // Role gets the role of the validator

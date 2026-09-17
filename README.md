@@ -140,6 +140,8 @@ Exactly one active identity source must be configured:
 - `validator.identities.active_pubkey`: uses a configured identity public key directly.
 - `validator.identities.active`: legacy path to an active identity keypair file.
 
+Native Firedancer v1+ and FireBAM with `release_track: firedancer` v1+ do not expose the `getVoteAccounts` RPC method. For those clients, configure `validator.identities.active_pubkey` or the legacy `validator.identities.active` keypair file; `vote_account_pubkey` cannot be used to discover the active identity. FireBAM with `release_track: frankendancer` retains standard vote-account discovery.
+
 The passive identity is optional. Configure at most one of `validator.identities.passive_pubkey` or the legacy `validator.identities.passive` keypair path. When a passive identity is configured, any local identity matching neither active nor passive is treated as unknown and syncing is skipped. A configuration using only public keys does not read either keypair file.
 
 For example, a static, file-free configuration is:
