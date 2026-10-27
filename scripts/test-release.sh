@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # Test script to simulate the release process locally
-# This script uses the build-release.sh script to test the complete process
+# This script uses the same Make target as GitHub Actions.
 
 set -e
 
 echo "🧪 Testing release process locally..."
 
-# Use the build script with a test version
-./scripts/build-release.sh "1.0.0-test"
+# Build release archives with a test version
+make build-all APP_VERSION="1.0.0-test"
 
 echo ""
 echo "✅ Release test complete!"

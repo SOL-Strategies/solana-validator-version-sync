@@ -15,15 +15,6 @@ services:
     depends_on:
       - mock-validator
 
-  build-all:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - ./cmd/version.txt:/app/cmd/version.txt
-      - ./bin:/app/bin
-    command: ["make", "build-all"]
-
   mock-validator:
     build:
       context: ./mock-server
