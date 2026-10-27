@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gagliardetto/solana-go"
@@ -372,6 +373,18 @@ sync:
 				}
 			}
 		})
+	}
+}
+
+func TestConfigRejectsRemovedReleaseTrack(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := "validator:\n  client: firebam\n  release_track: firedancer\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := New()
+	if err := cfg.LoadFromFile(path); err == nil || !strings.Contains(err.Error(), "release_track is no longer supported") {
+		t.Fatalf("LoadFromFile() error = %v, want removed release_track guidance", err)
 	}
 }
 

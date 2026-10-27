@@ -37,10 +37,10 @@ var clientRepoConfigs = map[string]ClientRepoConfig{
 			constants.ClusterNameMainnetBeta: "(?is).*This is a Testnet release\\.[^\\n]*(may also be used on mainnet|also (?:be )?suitable for mainnet).*",
 		},
 		ReleaseTitleRegexes: map[string]string{
-			// Match the dancer suffix and tolerate releases that omit the optional v before the version.
-			constants.ClusterNameMainnetBeta: "^(.*)dancer Mainnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
-			// Match the dancer suffix and tolerate releases that omit the optional v before the version.
-			constants.ClusterNameTestnet: "^(.*)dancer Testnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
+			// Match native Firedancer mainnet titles, including the current Release form.
+			constants.ClusterNameMainnetBeta: "^(Firedancer Mainnet )(?:Release )?v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
+			// Match native Firedancer testnet titles, including the current Release form.
+			constants.ClusterNameTestnet: "^(Firedancer Testnet )(?:Release )?v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
 		},
 	},
 	constants.ClientNameFireBAM: {
@@ -49,8 +49,8 @@ var clientRepoConfigs = map[string]ClientRepoConfig{
 			constants.ClusterNameMainnetBeta: "(?is).*This is a Testnet release\\.[^\\n]*(may also be used on mainnet|also (?:be )?suitable for mainnet).*",
 		},
 		ReleaseTitleRegexes: map[string]string{
-			constants.ClusterNameMainnetBeta: "^(.*)dancer Mainnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
-			constants.ClusterNameTestnet:     "^(.*)dancer Testnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
+			constants.ClusterNameMainnetBeta: "^(Firedancer Mainnet )(?:Release )?v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
+			constants.ClusterNameTestnet:     "^(Firedancer Testnet )(?:Release )?v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
 		},
 	},
 }

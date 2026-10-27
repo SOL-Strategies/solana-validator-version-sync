@@ -13,8 +13,6 @@ type Validator struct {
 	// Client is the solana validator client - one of: agave, jito-solana, rakurai-validator, firedancer, firebam
 	// The legacy alias "rakurai" is also accepted and normalized to "rakurai-validator".
 	Client string `koanf:"client"`
-	// ReleaseTrack selects the FireBAM validator implementation: frankendancer or firedancer
-	ReleaseTrack string `koanf:"release_track"`
 	// RPCURL is the URL of the validator's RPC endpoint
 	RPCURL string `koanf:"rpc_url"`
 	// VersionConstraint is the constraint for the client version
@@ -70,10 +68,6 @@ func (v *Validator) Validate() error {
 	}
 	v.Client = normalizedClient
 
-	if err := constants.ValidateReleaseTrack(v.Client, v.ReleaseTrack); err != nil {
-		return err
-	}
-
 	// Validate RPC URL
 	_, err = url.Parse(v.RPCURL)
 	if err != nil {
@@ -88,6 +82,9 @@ func (v *Validator) Validate() error {
 	}
 	if activeSources != 1 {
 		return fmt.Errorf("exactly one of validator.vote_account_pubkey, validator.identities.active_pubkey, or validator.identities.active must be configured")
+	}
+	if constants.IsFiredancerFamily(v.Client) && v.VoteAccountPublicKey != "" {
+		return fmt.Errorf("native Firedancer does not support getVoteAccounts; configure validator.identities.active_pubkey or validator.identities.active")
 	}
 
 	if v.Identities.PassivePublicKey != "" && v.Identities.PassiveKeyPairFile != "" {

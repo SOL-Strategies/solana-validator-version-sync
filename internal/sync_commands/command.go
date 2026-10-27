@@ -56,7 +56,6 @@ type CommandTemplateData struct {
 	CommandsCount               int
 	ValidatorClient             string
 	ValidatorRPCURL             string
-	ValidatorReleaseTrack       string
 	ValidatorRole               string
 	ValidatorRoleIsPassive      bool
 	ValidatorRoleIsActive       bool

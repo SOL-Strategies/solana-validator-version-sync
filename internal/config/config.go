@@ -66,6 +66,9 @@ func (c *Config) LoadFromFile(filePath string) error {
 	if err := k.Load(file.Provider(c.File), yaml.Parser()); err != nil {
 		return fmt.Errorf("error loading config file: %w", err)
 	}
+	if k.Exists("validator.release_track") {
+		return fmt.Errorf("validator.release_track is no longer supported; remove it from the configuration")
+	}
 
 	// Unmarshal into this config struct
 	if err := k.Unmarshal("", c); err != nil {

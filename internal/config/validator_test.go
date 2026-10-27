@@ -48,10 +48,9 @@ func TestValidator_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid firebam frankendancer validator",
+			name: "valid firebam validator",
 			validator: Validator{
 				Client:            constants.ClientNameFireBAM,
-				ReleaseTrack:      constants.ReleaseTrackFrankendancer,
 				RPCURL:            "http://127.0.0.1:8899",
 				VersionConstraint: ">= 0.1.0, < 1.0.0",
 				Identities:        Identities{ActivePublicKey: validIdentity},
@@ -59,10 +58,9 @@ func TestValidator_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid firebam firedancer validator",
+			name: "valid firebam validator",
 			validator: Validator{
 				Client:            constants.ClientNameFireBAM,
-				ReleaseTrack:      constants.ReleaseTrackFiredancer,
 				RPCURL:            "http://127.0.0.1:8899",
 				VersionConstraint: ">= 1.0.0",
 				Identities:        Identities{ActivePublicKey: validIdentity},
@@ -70,33 +68,31 @@ func TestValidator_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "firebam requires release track",
+			name: "firebam accepts native default",
 			validator: Validator{
 				Client:     constants.ClientNameFireBAM,
 				RPCURL:     "http://127.0.0.1:8899",
 				Identities: Identities{ActivePublicKey: validIdentity},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
-			name: "firebam rejects unknown release track",
+			name: "firebam accepts native default",
 			validator: Validator{
-				Client:       constants.ClientNameFireBAM,
-				ReleaseTrack: "combined",
-				RPCURL:       "http://127.0.0.1:8899",
-				Identities:   Identities{ActivePublicKey: validIdentity},
+				Client:     constants.ClientNameFireBAM,
+				RPCURL:     "http://127.0.0.1:8899",
+				Identities: Identities{ActivePublicKey: validIdentity},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
-			name: "non-firebam rejects release track",
+			name: "firedancer accepts native identity",
 			validator: Validator{
-				Client:       constants.ClientNameFiredancer,
-				ReleaseTrack: constants.ReleaseTrackFiredancer,
-				RPCURL:       "http://127.0.0.1:8899",
-				Identities:   Identities{ActivePublicKey: validIdentity},
+				Client:     constants.ClientNameFiredancer,
+				RPCURL:     "http://127.0.0.1:8899",
+				Identities: Identities{ActivePublicKey: validIdentity},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name: "valid rakurai-validator validator",
@@ -170,6 +166,7 @@ func TestValidator_ValidateIdentitySources(t *testing.T) {
 		wantErr bool
 	}{
 		{"vote account source", func(v *Validator) { v.VoteAccountPublicKey = active }, false},
+		{"native firedancer rejects vote account source", func(v *Validator) { v.Client = constants.ClientNameFiredancer; v.VoteAccountPublicKey = active }, true},
 		{"identity pubkeys", func(v *Validator) { v.Identities.ActivePublicKey, v.Identities.PassivePublicKey = active, passive }, false},
 		{"legacy paths", func(v *Validator) {
 			v.Identities.ActiveKeyPairFile, v.Identities.PassiveKeyPairFile = "active.json", "passive.json"

@@ -56,7 +56,6 @@ log:
 
 validator:
   client: agave                          # required, one of agave|jito-solana|rakurai-validator|firedancer|firebam (legacy alias: rakurai)
-  # release_track: frankendancer         # required only for firebam, one of frankendancer|firedancer
   version_constraint: ">= 2.3.6, < 3.0.0" # required, a valid go-version semver constraint string - ref https://github.com/hashicorp/go-version
   rpc_url: http://127.0.0.1:8899         # optional, default: http:127.0.0.1:8899 - local validator rpc URL
 
@@ -92,7 +91,6 @@ sync:
   #  .CommandsCount               count of commands in the commands array
   #  .SyncIsSFDPComplianceEnabled true|false (value of sync.enable_sfdp_compliance)
   #  .ValidatorClient             client name (value of validator.client)
-  #  .ValidatorReleaseTrack       firebam release track; empty for other clients
   #  .ValidatorIdentityPublicKey  public key of the validator's identity as reported by .ValidatorRPCURL
   #  .ValidatorRole               active|passive
   #  .ValidatorRoleIsActive       true|false
@@ -120,19 +118,19 @@ Jito tag exists, regardless of the Jito release title prefix.
 
 ### FireBAM
 
-FireBAM publishes both Frankendancer and native Firedancer releases from the same repository. Select one track explicitly so a sync never migrates between implementations automatically:
+FireBAM tracks native Firedancer releases. Upstream Firedancer determines the eligible version for the configured cluster, and FireBAM is updated only when its repository has that exact tag. If FireBAM has not published the tag yet, syncing is skipped and retried on the next cycle.
 
 ```yaml
 validator:
   client: firebam
-  release_track: frankendancer
-  version_constraint: ">= 0.1100.0, < 1.0.0"
+  version_constraint: ">= 26.0.0"
   rpc_url: http://127.0.0.1:8899
   identities:
     active_pubkey: <ACTIVE_IDENTITY_PUBKEY>
 ```
 
-Use `release_track: firedancer` with an appropriate `1.x` constraint for native Firedancer. The client and track are configuration-driven because the standard Solana `getVersion` response does not reliably distinguish FireBAM from upstream Firedancer.
+Use a version constraint that admits the upstream Firedancer release tags in use, including calendar versions such as `26.10.4`.
+Constraints limited to older `1.x` releases must be updated to admit the current calendar version tags before upgrading.
 
 Exactly one active identity source must be configured:
 
@@ -140,7 +138,7 @@ Exactly one active identity source must be configured:
 - `validator.identities.active_pubkey`: uses a configured identity public key directly.
 - `validator.identities.active`: legacy path to an active identity keypair file.
 
-Native Firedancer v1+ and FireBAM with `release_track: firedancer` v1+ do not expose the `getVoteAccounts` RPC method. For those clients, configure `validator.identities.active_pubkey` or the legacy `validator.identities.active` keypair file; `vote_account_pubkey` cannot be used to discover the active identity. FireBAM with `release_track: frankendancer` retains standard vote-account discovery.
+Native Firedancer and FireBAM do not expose the `getVoteAccounts` RPC method. Configure `validator.identities.active_pubkey` or the legacy `validator.identities.active` keypair file; `vote_account_pubkey` cannot be used to discover the active identity. Remove the obsolete `validator.release_track` option from existing configurations. Running Frankendancer versions are rejected and must be migrated to native Firedancer manually.
 
 The passive identity is optional. Configure at most one of `validator.identities.passive_pubkey` or the legacy `validator.identities.passive` keypair path. When a passive identity is configured, any local identity matching neither active nor passive is treated as unknown and syncing is skipped. A configuration using only public keys does not read either keypair file.
 

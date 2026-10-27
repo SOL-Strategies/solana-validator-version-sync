@@ -1,6 +1,7 @@
 package sfdp
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -10,13 +11,17 @@ import (
 
 // RequiredVersions represents an SFDP version constraints
 type Requirements struct {
-	Epoch                      int    `json:"epoch"`
-	Cluster                    string `json:"cluster"`
-	AgaveMinVersion            string `json:"agave_min_version"`
-	AgaveMaxVersion            string `json:"agave_max_version"`
-	FiredancerMinVersion       string `json:"firedancer_min_version"`
-	FiredancerMaxVersion       string `json:"firedancer_max_version"`
-	InheritedFromPreviousEpoch bool   `json:"inherited_from_previous_epoch"`
+	Epoch                      int     `json:"epoch"`
+	Cluster                    string  `json:"cluster"`
+	AgaveMinVersion            string  `json:"agave_min_version"`
+	AgaveMaxVersion            string  `json:"agave_max_version"`
+	FiredancerMinVersion       string  `json:"firedancer_min_version"`
+	FiredancerMaxVersion       string  `json:"firedancer_max_version"`
+	FiredancerFullMinVersion   *string `json:"firedancer_full_min_version"`
+	FiredancerFullMaxVersion   *string `json:"firedancer_full_max_version"`
+	firedancerFullMinPresent   bool
+	firedancerFullMaxPresent   bool
+	InheritedFromPreviousEpoch bool `json:"inherited_from_previous_epoch"`
 
 	Client        string
 	Constraints   version.Constraints
@@ -24,6 +29,22 @@ type Requirements struct {
 	MinVersion    *version.Version
 	HasMaxVersion bool
 	HasMinVersion bool
+}
+
+func (r *Requirements) UnmarshalJSON(data []byte) error {
+	type Alias Requirements
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	var decoded Alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*r = Requirements(decoded)
+	_, r.firedancerFullMinPresent = fields["firedancer_full_min_version"]
+	_, r.firedancerFullMaxPresent = fields["firedancer_full_max_version"]
+	return nil
 }
 
 // SetClient sets the client and limits for it
@@ -39,8 +60,15 @@ func (r *Requirements) SetClient(client string) (err error) {
 		maxVersion = r.AgaveMaxVersion
 	case constants.ClientNameFiredancer, constants.ClientNameFireBAM:
 		r.Client = client
-		minVersion = r.FiredancerMinVersion
-		maxVersion = r.FiredancerMaxVersion
+		if !r.firedancerFullMinPresent || !r.firedancerFullMaxPresent {
+			return fmt.Errorf("SFDP response is missing native Firedancer version requirements")
+		}
+		if r.FiredancerFullMinVersion != nil {
+			minVersion = *r.FiredancerFullMinVersion
+		}
+		if r.FiredancerFullMaxVersion != nil {
+			maxVersion = *r.FiredancerFullMaxVersion
+		}
 	default:
 		return fmt.Errorf("invalid client: %s", client)
 	}
