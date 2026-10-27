@@ -82,23 +82,3 @@ func TestIsFiredancerFamily(t *testing.T) {
 		t.Error("IsFiredancerFamily(agave) = true, want false")
 	}
 }
-
-func TestValidateReleaseTrack(t *testing.T) {
-	tests := []struct {
-		client string
-		track  string
-		valid  bool
-	}{
-		{ClientNameFireBAM, ReleaseTrackFrankendancer, true},
-		{ClientNameFireBAM, ReleaseTrackFiredancer, true},
-		{ClientNameFireBAM, "", false},
-		{ClientNameFireBAM, "combined", false},
-		{ClientNameFiredancer, "", true},
-		{ClientNameFiredancer, ReleaseTrackFiredancer, false},
-	}
-	for _, tt := range tests {
-		if err := ValidateReleaseTrack(tt.client, tt.track); (err == nil) != tt.valid {
-			t.Errorf("ValidateReleaseTrack(%q, %q) error = %v, valid = %v", tt.client, tt.track, err, tt.valid)
-		}
-	}
-}

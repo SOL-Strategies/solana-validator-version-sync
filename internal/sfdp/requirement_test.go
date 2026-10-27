@@ -1,6 +1,7 @@
 package sfdp
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/sol-strategies/solana-validator-version-sync/internal/constants"
@@ -50,6 +51,26 @@ func TestRequirements_StructFields(t *testing.T) {
 	}
 	if req.HasMinVersion != true {
 		t.Errorf("Expected HasMinVersion to be true, got %v", req.HasMinVersion)
+	}
+}
+
+func TestRequirementsSetClientUsesNativeFieldsAndRejectsMissingFields(t *testing.T) {
+	var requirements Requirements
+	if err := json.Unmarshal([]byte(`{"firedancer_min_version":"0.1300.0","firedancer_full_min_version":"26.10.4","firedancer_full_max_version":null}`), &requirements); err != nil {
+		t.Fatal(err)
+	}
+	if err := requirements.SetClient(constants.ClientNameFiredancer); err != nil {
+		t.Fatal(err)
+	}
+	if requirements.MinVersion.Original() != "26.10.4" || requirements.HasMaxVersion {
+		t.Fatalf("native requirements = min %v max %v", requirements.MinVersion, requirements.MaxVersion)
+	}
+	var missing Requirements
+	if err := json.Unmarshal([]byte(`{"firedancer_min_version":"0.1300.0"}`), &missing); err != nil {
+		t.Fatal(err)
+	}
+	if err := missing.SetClient(constants.ClientNameFiredancer); err == nil {
+		t.Fatal("SetClient() should reject missing native Firedancer bounds fields")
 	}
 }
 
@@ -133,10 +154,10 @@ func TestRequirements_SetClient(t *testing.T) {
 			firedancerMaxVersion: "0.1.2",
 			wantErr:              false,
 			expectedClient:       constants.ClientNameFiredancer,
-			expectedMinVersion:   "0.1.0",
-			expectedMaxVersion:   "0.1.2",
+			expectedMinVersion:   "26.10.0",
+			expectedMaxVersion:   "",
 			expectedHasMin:       true,
-			expectedHasMax:       true,
+			expectedHasMax:       false,
 		},
 		{
 			name:                 "agave client with only min version",
@@ -212,10 +233,13 @@ func TestRequirements_SetClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := Requirements{
-				AgaveMinVersion:      tt.agaveMinVersion,
-				AgaveMaxVersion:      tt.agaveMaxVersion,
-				FiredancerMinVersion: tt.firedancerMinVersion,
-				FiredancerMaxVersion: tt.firedancerMaxVersion,
+				AgaveMinVersion:          tt.agaveMinVersion,
+				AgaveMaxVersion:          tt.agaveMaxVersion,
+				FiredancerMinVersion:     tt.firedancerMinVersion,
+				FiredancerMaxVersion:     tt.firedancerMaxVersion,
+				FiredancerFullMinVersion: stringPtr("26.10.0"),
+				firedancerFullMinPresent: true,
+				firedancerFullMaxPresent: true,
 			}
 
 			err := req.SetClient(tt.client)
@@ -279,12 +303,17 @@ func TestRequirements_SetClient(t *testing.T) {
 	}
 }
 
+func stringPtr(s string) *string { return &s }
+
 func TestRequirementsSetClientFireBAMUsesFiredancerBounds(t *testing.T) {
 	requirements := Requirements{
-		AgaveMinVersion:      "4.0.0",
-		AgaveMaxVersion:      "4.1.0",
-		FiredancerMinVersion: "0.1104.40200",
-		FiredancerMaxVersion: "0.1105.40200",
+		AgaveMinVersion:          "4.0.0",
+		AgaveMaxVersion:          "4.1.0",
+		FiredancerMinVersion:     "0.1104.40200",
+		FiredancerMaxVersion:     "0.1105.40200",
+		FiredancerFullMinVersion: stringPtr("26.10.0"),
+		firedancerFullMinPresent: true,
+		firedancerFullMaxPresent: true,
 	}
 	if err := requirements.SetClient(constants.ClientNameFireBAM); err != nil {
 		t.Fatalf("SetClient(firebam) error = %v", err)
@@ -292,11 +321,11 @@ func TestRequirementsSetClientFireBAMUsesFiredancerBounds(t *testing.T) {
 	if requirements.Client != constants.ClientNameFireBAM {
 		t.Errorf("Client = %q, want %q", requirements.Client, constants.ClientNameFireBAM)
 	}
-	if requirements.MinVersion.Original() != "0.1104.40200" {
-		t.Errorf("MinVersion = %q, want %q", requirements.MinVersion.Original(), "0.1104.40200")
+	if requirements.MinVersion.Original() != "26.10.0" {
+		t.Errorf("MinVersion = %q, want %q", requirements.MinVersion.Original(), "26.10.0")
 	}
-	if requirements.MaxVersion.Original() != "0.1105.40200" {
-		t.Errorf("MaxVersion = %q, want %q", requirements.MaxVersion.Original(), "0.1105.40200")
+	if requirements.HasMaxVersion {
+		t.Errorf("HasMaxVersion = true, want false")
 	}
 }
 

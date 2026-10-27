@@ -165,7 +165,8 @@ func TestClientRepoConfigs_FiredancerReleaseTitleRegex(t *testing.T) {
 	}{
 		{name: "mainnet with version prefix", cluster: constants.ClusterNameMainnetBeta, title: "Firedancer Mainnet v1.1.3", shouldMatch: true},
 		{name: "mainnet without version prefix", cluster: constants.ClusterNameMainnetBeta, title: "Firedancer Mainnet 1.1.4", shouldMatch: true},
-		{name: "frankendancer without version prefix", cluster: constants.ClusterNameMainnetBeta, title: "Frankendancer Mainnet 0.1005.40100", shouldMatch: true},
+		{name: "frankendancer title is excluded", cluster: constants.ClusterNameMainnetBeta, title: "Frankendancer Mainnet 0.1005.40100", shouldMatch: false},
+		{name: "calendar release title", cluster: constants.ClusterNameMainnetBeta, title: "Firedancer Mainnet Release v26.10.4", shouldMatch: true},
 		{name: "testnet without version prefix", cluster: constants.ClusterNameTestnet, title: "Firedancer Testnet 1.2.0", shouldMatch: true},
 		{name: "wrong cluster", cluster: constants.ClusterNameMainnetBeta, title: "Firedancer Testnet 1.1.4", shouldMatch: false},
 		{name: "missing patch version", cluster: constants.ClusterNameMainnetBeta, title: "Firedancer Mainnet 1.1", shouldMatch: false},
@@ -240,7 +241,7 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			clientName: constants.ClientNameFiredancer,
 			cluster:    constants.ClusterNameMainnetBeta,
 			regexType:  "ReleaseTitleRegex",
-			regex:      "^(.*)dancer Mainnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
+			regex:      "^(Firedancer Mainnet )(?:Release )?v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
 		},
 		{
 			clientName: constants.ClientNameFiredancer,
@@ -252,7 +253,7 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			clientName: constants.ClientNameFiredancer,
 			cluster:    constants.ClusterNameTestnet,
 			regexType:  "ReleaseTitleRegex",
-			regex:      "^(.*)dancer Testnet v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
+			regex:      "^(Firedancer Testnet )(?:Release )?v?([0-9]+\\.[0-9]+\\.[0-9]+)(?:\\b.*)?$",
 		},
 	}
 
@@ -283,164 +284,6 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 	}
 }
 
-func TestFiredancerCompatibilityKey(t *testing.T) {
-	mustVersion := func(s string) *goversion.Version {
-		v, err := goversion.NewVersion(s)
-		if err != nil {
-			t.Fatalf("failed to parse version %q: %v", s, err)
-		}
-		return v
-	}
-
-	tests := []struct {
-		name string
-		in   string
-		want int64
-	}{
-		{
-			name: "repo tag with feature-set patch",
-			in:   "v0.910.40000",
-			want: 40000,
-		},
-		{
-			name: "newer repo tag with feature-set patch",
-			in:   "v0.1001.40101",
-			want: 40101,
-		},
-		{
-			name: "SFDP beta-shaped compatibility version",
-			in:   "0.101.0-beta.40101",
-			want: 40101,
-		},
-		{
-			name: "RPC beta-shaped compatibility version",
-			in:   "0.902.0-beta.40002",
-			want: 40002,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := firedancerCompatibilityKey(mustVersion(tt.in))
-			if err != nil {
-				t.Fatalf("firedancerCompatibilityKey() error = %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("firedancerCompatibilityKey(%q) = %d, want %d", tt.in, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestFiredancerCompatibilityVersionKey(t *testing.T) {
-	mustVersion := func(s string) *goversion.Version {
-		v, err := goversion.NewVersion(s)
-		if err != nil {
-			t.Fatalf("failed to parse version %q: %v", s, err)
-		}
-		return v
-	}
-
-	tests := []struct {
-		name              string
-		in                string
-		wantTrain         int64
-		wantCompatibility int64
-	}{
-		{
-			name:              "repo tag uses minor as release train",
-			in:                "v0.1005.40100",
-			wantTrain:         1005,
-			wantCompatibility: 40100,
-		},
-		{
-			name:              "current SFDP rc-shaped min uses minor as release train",
-			in:                "0.1004.0-rc.40101",
-			wantTrain:         1004,
-			wantCompatibility: 40101,
-		},
-		{
-			name:              "legacy SFDP beta-shaped min maps to repo train",
-			in:                "0.101.0-beta.40101",
-			wantTrain:         1001,
-			wantCompatibility: 40101,
-		},
-		{
-			name:              "older RPC beta-shaped version keeps repo train",
-			in:                "0.902.0-beta.40002",
-			wantTrain:         902,
-			wantCompatibility: 40002,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := firedancerCompatibilityVersionKey(mustVersion(tt.in))
-			if err != nil {
-				t.Fatalf("firedancerCompatibilityVersionKey() error = %v", err)
-			}
-			if got.train != tt.wantTrain || got.compatibilityKey != tt.wantCompatibility {
-				t.Errorf("firedancerCompatibilityVersionKey(%q) = {%d %d}, want {%d %d}",
-					tt.in,
-					got.train,
-					got.compatibilityKey,
-					tt.wantTrain,
-					tt.wantCompatibility,
-				)
-			}
-		})
-	}
-}
-
-func TestFiredancerCompatibilityVersionKeyCompare(t *testing.T) {
-	mustKey := func(s string) firedancerCompatibilityKeyTuple {
-		v, err := goversion.NewVersion(s)
-		if err != nil {
-			t.Fatalf("failed to parse version %q: %v", s, err)
-		}
-		key, err := firedancerCompatibilityVersionKey(v)
-		if err != nil {
-			t.Fatalf("firedancerCompatibilityVersionKey(%q) error = %v", s, err)
-		}
-		return key
-	}
-
-	tests := []struct {
-		name string
-		a    string
-		b    string
-		want int
-	}{
-		{
-			name: "newer mainnet train satisfies lower SFDP train despite lower compatibility key",
-			a:    "v0.1005.40100",
-			b:    "0.1004.0-rc.40101",
-			want: 1,
-		},
-		{
-			name: "same train compares by compatibility key",
-			a:    "v0.1004.40101",
-			b:    "0.1004.0-rc.40101",
-			want: 0,
-		},
-		{
-			name: "legacy SFDP beta min maps to matching repo train",
-			a:    "v0.1001.40101",
-			b:    "0.101.0-beta.40101",
-			want: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := mustKey(tt.a).Compare(mustKey(tt.b))
-			if got != tt.want {
-				t.Errorf("Compare(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestNormalizeToTagVersion(t *testing.T) {
 	mustVersion := func(s string) *goversion.Version {
 		v, err := goversion.NewVersion(s)
@@ -457,72 +300,9 @@ func TestNormalizeToTagVersion(t *testing.T) {
 		input          string
 		want           string
 	}{
-		// Feature-set (PATCH) matching: post-PR #8945 RPC format where MINOR differs from tag
-		{
-			name:           "firedancer: normalizes 0.33670.40002 to 0.902.40002 by feature-set match",
-			clientName:     constants.ClientNameFiredancer,
-			cachedVersions: []string{"v0.902.40002"},
-			input:          "0.33670.40002",
-			want:           "0.902.40002",
-		},
-		{
-			name:           "firedancer: picks correct tag from multiple cached versions via feature-set",
-			clientName:     constants.ClientNameFiredancer,
-			cachedVersions: []string{"v0.901.40001", "v0.902.40002", "v0.903.40003"},
-			input:          "0.33670.40002",
-			want:           "0.902.40002",
-		},
-		{
-			name:           "firedancer: exact tag-format match wins over duplicate feature-set",
-			clientName:     constants.ClientNameFiredancer,
-			cachedVersions: []string{"v0.821.30114", "v0.822.30114", "v0.909.40001"},
-			input:          "0.822.30114",
-			want:           "0.822.30114",
-		},
-		{
-			name:           "firedancer: duplicate feature-set match picks latest tag",
-			clientName:     constants.ClientNameFiredancer,
-			cachedVersions: []string{"v0.821.30114", "v0.822.30114"},
-			input:          "0.33670.30114",
-			want:           "0.822.30114",
-		},
-		// MAJOR.MINOR matching: current RPC format where PATCH is 0 (e.g. 0.902.0 vs tag v0.902.40002)
-		{
-			name:           "firedancer: normalizes 0.902.0 to 0.902.40002 by major.minor match",
-			clientName:     constants.ClientNameFiredancer,
-			cachedVersions: []string{"v0.902.40002"},
-			input:          "0.902.0",
-			want:           "0.902.40002",
-		},
-		{
-			name:           "firebam: uses firedancer feature-set normalization",
-			clientName:     constants.ClientNameFireBAM,
-			cachedVersions: []string{"v0.1105.40200"},
-			input:          "0.33670.40200",
-			want:           "0.1105.40200",
-		},
-		{
-			name:           "firedancer: picks correct tag from multiple cached versions via major.minor",
-			clientName:     constants.ClientNameFiredancer,
-			cachedVersions: []string{"v0.901.40001", "v0.902.40002", "v0.903.40003"},
-			input:          "0.902.0",
-			want:           "0.902.40002",
-		},
-		// Firedancer fallback: no match
-		{
-			name:           "firedancer: returns unchanged when cache is empty",
-			clientName:     constants.ClientNameFiredancer,
-			cachedVersions: []string{},
-			input:          "0.33670.40002",
-			want:           "0.33670.40002",
-		},
-		{
-			name:           "firedancer: returns unchanged when no cached tag matches either strategy",
-			clientName:     constants.ClientNameFiredancer,
-			cachedVersions: []string{"v0.901.40001"},
-			input:          "0.33670.40002",
-			want:           "0.33670.40002",
-		},
+		{name: "native firedancer exact tag", clientName: constants.ClientNameFiredancer, cachedVersions: []string{"v26.10.4"}, input: "26.10.4", want: "26.10.4"},
+		{name: "native firedancer does not match by minor", clientName: constants.ClientNameFiredancer, cachedVersions: []string{"v26.10.4"}, input: "26.10.3", want: "26.10.3"},
+		{name: "firebam native exact tag", clientName: constants.ClientNameFireBAM, cachedVersions: []string{"v26.10.4"}, input: "26.10.4", want: "26.10.4"},
 		// Jito-Solana: RPC omits -jito suffix present in git tags
 		{
 			name:           "jito-solana: normalizes 4.0.0-beta.2 to v4.0.0-beta.2-jito by stripping -jito suffix",
@@ -626,169 +406,23 @@ func TestNormalizeToTagVersion(t *testing.T) {
 }
 
 func TestResolveFiredancerSFDPCompliantVersion(t *testing.T) {
-	mustVersion := func(s string) *goversion.Version {
-		v, err := goversion.NewVersion(s)
-		if err != nil {
-			t.Fatalf("failed to parse version %q: %v", s, err)
-		}
-		return v
+	parse := func(s string) *goversion.Version { return goversion.Must(goversion.NewVersion(s)) }
+	client := &Client{clientName: constants.ClientNameFiredancer, cachedTagVersions: []*goversion.Version{parse("v26.10.2"), parse("v26.10.4"), parse("v0.1204.40300")}}
+	got, err := client.ResolveFiredancerSFDPCompliantVersion(parse("v26.10.4"), parse("26.10.3"), true, nil, false)
+	if err != nil || got.Original() != "v26.10.4" {
+		t.Fatalf("got %v, err %v", got, err)
 	}
-
-	clientWithTags := func(tags ...string) *Client {
-		tagInfos := make([]tagVersionInfo, 0, len(tags))
-		tagVersions := make([]*goversion.Version, 0, len(tags))
-		for _, tag := range tags {
-			v := mustVersion(tag)
-			tagInfos = append(tagInfos, tagVersionInfo{
-				TagName: tag,
-				Version: v,
-			})
-			tagVersions = append(tagVersions, v)
-		}
-		return &Client{
-			clientName:        constants.ClientNameFiredancer,
-			cachedTagInfos:    tagInfos,
-			cachedTagVersions: tagVersions,
-			logger:            log.WithPrefix("test"),
-		}
-	}
-
-	tests := []struct {
-		name      string
-		tags      []string
-		target    string
-		min       string
-		hasMin    bool
-		max       string
-		hasMax    bool
-		want      string
-		wantError bool
-	}{
-		{
-			name:   "maps SFDP beta min to matching repo tag",
-			tags:   []string{"v0.910.40000", "v0.1001.40101"},
-			target: "v0.910.40000",
-			min:    "0.101.0-beta.40101",
-			hasMin: true,
-			want:   "v0.1001.40101",
-		},
-		{
-			name:   "keeps target when compatibility key satisfies min",
-			tags:   []string{"v0.910.40000", "v0.1001.40101"},
-			target: "v0.1001.40101",
-			min:    "0.101.0-beta.40101",
-			hasMin: true,
-			want:   "v0.1001.40101",
-		},
-		{
-			name:   "keeps newer mainnet train when SFDP min has higher compatibility key on older train",
-			tags:   []string{"v0.1004.40101", "v0.1005.40100"},
-			target: "v0.1005.40100",
-			min:    "0.1004.0-rc.40101",
-			hasMin: true,
-			want:   "v0.1005.40100",
-		},
-		{
-			name:      "errors when no cached repo tag satisfies min",
-			tags:      []string{"v0.910.40000"},
-			target:    "v0.910.40000",
-			min:       "0.101.0-beta.40101",
-			hasMin:    true,
-			wantError: true,
-		},
-		{
-			name:   "selects highest compatible tag for max bound",
-			tags:   []string{"v0.909.39999", "v0.910.40000", "v0.1001.40101"},
-			target: "v0.1001.40101",
-			max:    "0.910.40000",
-			hasMax: true,
-			want:   "v0.910.40000",
-		},
-		{
-			name:   "uses latest tag when duplicate compatibility keys exist",
-			tags:   []string{"v0.1000.40101", "v0.1001.40101"},
-			target: "v0.910.40000",
-			min:    "0.101.0-beta.40101",
-			hasMin: true,
-			want:   "v0.1001.40101",
-		},
-		{
-			name:   "keeps native firedancer target when SFDP has legacy frankendancer min",
-			tags:   []string{"v0.1001.40101", "v1.0.0"},
-			target: "v1.0.0",
-			min:    "0.101.0-beta.40101",
-			hasMin: true,
-			want:   "v1.0.0",
-		},
-		{
-			name:      "errors for native firedancer target with explicit max bound",
-			tags:      []string{"v0.1001.40101", "v1.0.0"},
-			target:    "v1.0.0",
-			max:       "0.1001.40101",
-			hasMax:    true,
-			wantError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var minVersion *goversion.Version
-			if tt.hasMin {
-				minVersion = mustVersion(tt.min)
-			}
-			var maxVersion *goversion.Version
-			if tt.hasMax {
-				maxVersion = mustVersion(tt.max)
-			}
-
-			got, err := clientWithTags(tt.tags...).ResolveFiredancerSFDPCompliantVersion(
-				mustVersion(tt.target),
-				minVersion,
-				tt.hasMin,
-				maxVersion,
-				tt.hasMax,
-			)
-			if (err != nil) != tt.wantError {
-				t.Fatalf("ResolveFiredancerSFDPCompliantVersion() error = %v, wantError %v", err, tt.wantError)
-			}
-			if tt.wantError {
-				return
-			}
-			if got.Original() != tt.want {
-				t.Errorf("ResolveFiredancerSFDPCompliantVersion() = %q, want %q", got.Original(), tt.want)
-			}
-		})
+	got, err = client.ResolveFiredancerSFDPCompliantVersion(parse("v26.10.4"), nil, false, parse("26.10.2"), true)
+	if err != nil || got.Original() != "v26.10.2" {
+		t.Fatalf("got %v, err %v", got, err)
 	}
 }
 
-func TestResolveFiredancerSFDPCompliantVersionDoesNotSelectTestnetOnlyTagForMainnet(t *testing.T) {
-	mustVersion := func(s string) *goversion.Version {
-		v, err := goversion.NewVersion(s)
-		if err != nil {
-			t.Fatalf("failed to parse version %q: %v", s, err)
-		}
-		return v
-	}
-
-	client := &Client{
-		clientName: constants.ClientNameFiredancer,
-		cluster:    constants.ClusterNameMainnetBeta,
-		cachedTagInfos: []tagVersionInfo{
-			{TagName: "v0.910.40000", Version: mustVersion("v0.910.40000")},
-			{TagName: "v0.1001.40101", Version: mustVersion("v0.1001.40101"), TestnetOnly: true},
-		},
-		logger: log.WithPrefix("test"),
-	}
-
-	_, err := client.ResolveFiredancerSFDPCompliantVersion(
-		mustVersion("v0.910.40000"),
-		mustVersion("0.101.0-beta.40101"),
-		true,
-		nil,
-		false,
-	)
-	if err == nil {
-		t.Fatal("ResolveFiredancerSFDPCompliantVersion() should not select a testnet-only tag for mainnet")
+func TestResolveFiredancerSFDPRejectsFrankendancerOnlyCandidates(t *testing.T) {
+	parse := func(s string) *goversion.Version { return goversion.Must(goversion.NewVersion(s)) }
+	client := &Client{clientName: constants.ClientNameFiredancer, cachedTagVersions: []*goversion.Version{parse("v0.1204.40300")}}
+	if _, err := client.ResolveFiredancerSFDPCompliantVersion(parse("v0.1204.40300"), nil, false, nil, false); err == nil {
+		t.Fatal("expected no native candidate error")
 	}
 }
 
@@ -1552,99 +1186,58 @@ func TestGetLatestClientVersion_AgaveUsesExplicitTestnetPrereleaseNotes(t *testi
 	}
 }
 
-func TestGetLatestClientVersion_FiredancerIncludesMainnetSuitablePrerelease(t *testing.T) {
-	httpClient := &http.Client{
-		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/repos/firedancer-io/firedancer/releases" {
-				return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
-			}
-
-			body := `[
-				{"name":"Frankendancer Mainnet v0.1005.40100","tag_name":"v0.1005.40100","body":"This is a mainnet ready release.","prerelease":false},
-				{"name":"Frankendancer Mainnet v0.909.40001","tag_name":"v0.909.40001","body":"This is a mainnet release.","prerelease":false},
-				{"name":"Frankendancer Testnet v0.1002.40103","tag_name":"v0.1002.40103","body":"This is a Testnet release.","prerelease":true},
-				{"name":"Frankendancer Testnet v0.1004.40101","tag_name":"v0.1004.40101","body":"This is a Testnet release. It may also be used on mainnet with a small amount of stake in accordance with Anza's guidelines for v4.1.0-rc.1.","prerelease":true}
-			]`
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(body)),
-				Request:    r,
-			}, nil
-		}),
-	}
-
-	client, err := NewClient(Options{
-		Cluster: constants.ClusterNameMainnetBeta,
-		Client:  constants.ClientNameFiredancer,
-	})
+func TestGetLatestClientVersion_FiredancerUsesNativeReleases(t *testing.T) {
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/repos/firedancer-io/firedancer/releases" {
+			return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
+		}
+		body := `[{"name":"Frankendancer Mainnet v0.1204.40300","tag_name":"v0.1204.40300"},{"name":"Firedancer Mainnet Release v26.10.4","tag_name":"v26.10.4"},{"name":"Firedancer Testnet Release v26.10.5","tag_name":"v26.10.5","prerelease":true}]`
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})}
+	client, err := NewClient(Options{Cluster: constants.ClusterNameMainnetBeta, Client: constants.ClientNameFiredancer})
 	if err != nil {
-		t.Fatalf("NewClient() error = %v", err)
+		t.Fatal(err)
 	}
 	ghClient := gogithub.NewClient(httpClient)
-	baseURL, err := url.Parse("https://api.github.test/")
-	if err != nil {
-		t.Fatalf("failed to parse test GitHub API URL: %v", err)
-	}
+	baseURL, _ := url.Parse("https://api.github.test/")
 	ghClient.BaseURL = baseURL
 	client.client = ghClient
-
 	got, err := client.GetLatestClientVersion()
 	if err != nil {
 		t.Fatalf("GetLatestClientVersion() error = %v", err)
 	}
-	if got.Original() != "v0.1005.40100" {
-		t.Fatalf("GetLatestClientVersion() = %q, want %q", got.Original(), "v0.1005.40100")
-	}
-	if gotTag := client.TagNameForVersion(got); gotTag != "v0.1005.40100" {
-		t.Errorf("TagNameForVersion() = %q, want %q", gotTag, "v0.1005.40100")
+	if got.Original() != "v26.10.4" {
+		t.Fatalf("got %q, want v26.10.4", got.Original())
 	}
 }
 
-func TestGetLatestClientVersionFireBAMUsesConfiguredTrack(t *testing.T) {
-	httpClient := &http.Client{
-		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/repos/jito-foundation/firebam/releases" {
-				return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
-			}
-			if r.URL.Query().Get("per_page") != "100" {
-				return nil, fmt.Errorf("per_page = %q, want 100", r.URL.Query().Get("per_page"))
-			}
-			body := `[
-				{"name":"Frankendancer Mainnet v0.1105.40200","tag_name":"v0.1105.40200","body":"This is a mainnet ready release.","prerelease":false},
-				{"name":"Firedancer Mainnet 1.1.4","tag_name":"v1.1.4","body":"This is a mainnet ready release.","prerelease":false}
-			]`
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(body)),
-				Request:    r,
-			}, nil
-		}),
-	}
-
-	client, err := NewClient(Options{
-		Cluster:      constants.ClusterNameMainnetBeta,
-		Client:       constants.ClientNameFireBAM,
-		ReleaseTrack: constants.ReleaseTrackFrankendancer,
-	})
+func TestGetLatestClientVersionFireBAMUsesUpstreamTag(t *testing.T) {
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var body string
+		switch r.URL.Path {
+		case "/repos/firedancer-io/firedancer/releases":
+			body = `[{"name":"Firedancer Mainnet Release v26.10.4","tag_name":"v26.10.4"},{"name":"Firedancer Testnet Release v26.10.5","tag_name":"v26.10.5","prerelease":true}]`
+		case "/repos/jito-foundation/firebam/tags":
+			body = `[{"name":"v26.10.4"}]`
+		default:
+			return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})}
+	client, err := NewClient(Options{Cluster: constants.ClusterNameMainnetBeta, Client: constants.ClientNameFireBAM})
 	if err != nil {
-		t.Fatalf("NewClient() error = %v", err)
+		t.Fatal(err)
 	}
 	ghClient := gogithub.NewClient(httpClient)
-	baseURL, err := url.Parse("https://api.github.test/")
-	if err != nil {
-		t.Fatalf("failed to parse test GitHub API URL: %v", err)
-	}
+	baseURL, _ := url.Parse("https://api.github.test/")
 	ghClient.BaseURL = baseURL
 	client.client = ghClient
-
 	got, err := client.GetLatestClientVersion()
 	if err != nil {
 		t.Fatalf("GetLatestClientVersion() error = %v", err)
 	}
-	if got.Original() != "v0.1105.40200" {
-		t.Errorf("GetLatestClientVersion() = %q, want %q", got.Original(), "v0.1105.40200")
+	if got.Original() != "v26.10.4" {
+		t.Errorf("got %q, want v26.10.4", got.Original())
 	}
 }
 
