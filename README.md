@@ -162,7 +162,7 @@ If a command defines `environment` while `inherit_environment` remains `false`, 
 
 ### Prerequisites
 
-- Go 1.26.5 or later
+- Go 1.27.3 or later
 - Make
 - Docker (for Docker development)
 
@@ -173,11 +173,14 @@ If a command defines `environment` while `inherit_environment` remains `false`, 
 make build
 make dev
 
-# Build for all platforms
+# Build release binaries for Linux amd64 and arm64
 make build-all
 
 # Run tests
 make test
+
+# Check the built binary's version and help output
+make smoke-test
 
 # Clean build artifacts
 make clean
@@ -192,8 +195,8 @@ make dev-docker
 # Stop development environment
 make dev-docker-stop
 
-# Build Docker image
-make docker-build
+# Build the production Docker image
+docker build --build-arg APP_VERSION=dev -t solana-validator-version-sync:dev .
 ```
 
 ## License

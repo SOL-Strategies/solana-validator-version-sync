@@ -1,4 +1,4 @@
-FROM golang:1.26.5-alpine
+FROM golang:1.27.3-alpine
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
@@ -12,8 +12,8 @@ COPY go.mod go.sum ./
 # Copy source code
 COPY . .
 
-# Download dependencies and tidy (without vendor)
-RUN go mod download && go mod tidy
+# Download dependencies without changing the module files.
+RUN go mod download
 
 # Install Air for hot reloading
 RUN go install github.com/air-verse/air@latest
