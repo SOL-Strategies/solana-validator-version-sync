@@ -22,10 +22,10 @@ func TestFireBAMRequiresExactUpstreamTag(t *testing.T) {
 	}
 	client.cachedTagInfos = []tagVersionInfo{{TagName: "v26.10.4", Version: version.Must(version.NewVersion("v26.10.4"))}}
 	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != "/repos/jito-foundation/firebam/tags" {
+		if r.URL.Path != "/repos/jito-foundation/firebam/git/matching-refs/tags/v26.10.4" {
 			return nil, fmt.Errorf("unexpected path %s", r.URL.Path)
 		}
-		body := `[{"name":"v26.10.3"}]`
+		body := `[{"ref":"refs/tags/v26.10.3"}]`
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})}
 	ghClient := github.NewClient(httpClient)
@@ -644,6 +644,45 @@ func TestAgaveVersionStringsByClusterIncludesStablePatchReleasesWithoutClusterNo
 	}
 	if !got.Equal(want) {
 		t.Fatalf("latestVersionFromClusterVersionStrings() = %q, want %q", got.Original(), want.Original())
+	}
+}
+
+func TestAgaveDiscoveryAndSFDPTagCheckUseOneRequest(t *testing.T) {
+	requests := 0
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requests++
+		if r.URL.Path != "/repos/anza-xyz/agave/releases" {
+			return nil, fmt.Errorf("unexpected GitHub request %s", r.URL.Path)
+		}
+		body := `[{"name":"Release v4.4.0","tag_name":"v4.4.0","body":"This is a stable release recommended for 20% adoption. It is also recommended for Testnet and Devnet.","prerelease":false}]`
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})
+	gh := github.NewClient(&http.Client{Transport: transport})
+	gh.BaseURL, _ = url.Parse("https://api.github.test/")
+	client, err := NewClient(Options{Cluster: constants.ClusterNameMainnetBeta, Client: constants.ClientNameAgave})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.client = gh
+	version, err := client.GetLatestClientVersion()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version.Original() != "v4.4.0" {
+		t.Fatalf("latest = %s, want v4.4.0", version)
+	}
+	if requests != 1 {
+		t.Fatalf("discovery used %d requests, want 1", requests)
+	}
+	has, err := client.HasTaggedVersion(version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !has {
+		t.Fatal("cached release was not recognized as tagged")
+	}
+	if requests != 1 {
+		t.Fatalf("discovery and SFDP check used %d requests, want 1", requests)
 	}
 }
 

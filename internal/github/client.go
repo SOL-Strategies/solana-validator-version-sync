@@ -257,8 +257,8 @@ func (c *Client) getLatestJitoSolanaVersion(ctx context.Context) (latestVersion 
 		return nil, fmt.Errorf("failed to get agave releases for jito-solana classification: %w", err)
 	}
 
-	// Agave is the canonical source for cluster eligibility. Jito releases are
-	// only artifacts that can satisfy an Agave version when their tags match.
+	// Agave release notes are canonical for cluster eligibility. Jito releases
+	// only provide artifacts for Agave-eligible versions.
 	agaveReleaseNotesRegexes := make(map[string]*regexp.Regexp)
 	for _, cluster := range constants.ValidClusterNames {
 		agaveReleaseNotesRegex, err := regexp.Compile(clientRepoConfigs[constants.ClientNameAgave].ReleaseNotesRegexes[cluster])
@@ -395,97 +395,52 @@ func (c *Client) selectRakuraiTagVersionInfo(mainnetTagInfos []tagVersionInfo, t
 }
 
 // HasTaggedVersion checks if a tagged version exists in the client repo
-func (c *Client) HasTaggedVersion(testVersion *version.Version) (hasTaggedVersion bool, err error) {
+func (c *Client) HasTaggedVersion(testVersion *version.Version) (bool, error) {
+	if c.clientName != constants.ClientNameFireBAM {
+		for _, cached := range c.cachedTagInfos {
+			if c.tagInfoMatchesVersion(cached, testVersion) {
+				return true, nil
+			}
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
-	perPage := 20
-	if c.clientName == constants.ClientNameFireBAM {
-		perPage = 100
-	}
-
-	// get tags from the client repo and return true if a tag with the version exists
 	tagName := c.TagNameForVersion(testVersion)
-	options := &github.ListOptions{PerPage: perPage}
-	var tags []*github.RepositoryTag
-	for {
-		pageTags, response, listErr := c.client.Repositories.ListTags(ctx, c.repoOwner, c.repoName, options)
-		if listErr != nil {
-			return false, fmt.Errorf("failed to get tags: %w", listErr)
+	refs, _, err := c.client.Git.ListMatchingRefs(ctx, c.repoOwner, c.repoName, &github.ReferenceListOptions{Ref: "tags/" + tagName})
+	if err != nil {
+		return false, fmt.Errorf("failed to look up tag %s: %w", tagName, err)
+	}
+	for _, ref := range refs {
+		if ref == nil || ref.Ref == nil {
+			continue
 		}
-		tags = append(tags, pageTags...)
+		name := strings.TrimPrefix(*ref.Ref, "refs/tags/")
 		if c.clientName == constants.ClientNameFireBAM {
-			for _, tag := range pageTags {
-				if tag.GetName() == tagName {
-					return true, nil
-				}
-			}
-		}
-		if response == nil || response.NextPage == 0 {
-			break
-		}
-		options.Page = response.NextPage
-	}
-	if c.clientName == constants.ClientNameFireBAM {
-		return false, nil
-	}
-
-	if c.clientName == constants.ClientNameRakurai {
-		tagInfos := append(
-			tagVersionInfosFromTagRegex(tags, c.tagRegexes[constants.ClusterNameMainnetBeta], false),
-			tagVersionInfosFromTagRegex(tags, c.tagRegexes[constants.ClusterNameTestnet], true)...,
-		)
-		for _, tagInfo := range tagInfos {
-			c.logger.Debug("comparing rakurai tag version to test version", "tag", tagInfo.TagName, "tagVersion", tagInfo.Version.Core().String(), "testVersion", testVersion.Core().String())
-			if tagInfo.Version.Core().Compare(testVersion.Core()) == 0 {
-				return true, nil
-			}
-		}
-		return false, nil
-	}
-
-	if c.clientName == constants.ClientNameJitoSolana {
-		for _, tag := range tags {
-			if !jitoVersionSuffixRegex.MatchString(tag.GetName()) {
-				continue
-			}
-
-			tagInfo, err := c.tagVersionInfoFromVersionString(tag.GetName())
-			if err != nil {
-				c.logger.Debug("skipping jito-solana tag with unparsable version", "tag", tag.GetName(), "error", err)
-				continue
-			}
-
-			c.logger.Debug("comparing jito-solana tag version to test version", "tag", tagInfo.TagName, "tagVersion", tagInfo.Version.Original(), "testVersion", testVersion.Original())
-			if tagInfo.Version.Equal(testVersion) {
-				c.cacheTagInfo(tagInfo)
-				return true, nil
-			}
-		}
-		return false, nil
-	}
-
-	// check over the returned tags
-	for _, tag := range tags {
-		// parse the tag version into a version.Version so we can compare the core versions
-		c.logger.Debug("parsing github tag version", "tag", tag.GetName())
-		tagVersion, err := version.NewVersion(tag.GetName())
-		if err != nil {
-			return false, fmt.Errorf("failed to parse tag version: %w", err)
-		}
-
-		c.logger.Debug("comparing tag version to test version", "tagVersion", tagVersion.Original(), "testVersion", testVersion.Original())
-		if testVersion.Prerelease() != "" {
-			if tagVersion.Equal(testVersion) {
+			if name == tagName {
 				return true, nil
 			}
 			continue
 		}
-		if tagVersion.Core().Compare(testVersion.Core()) == 0 {
+		info, e := c.tagVersionInfoFromVersionString(name)
+		if e == nil && c.tagInfoMatchesVersion(info, testVersion) {
+			c.cacheTagInfo(info)
 			return true, nil
 		}
 	}
 	return false, nil
+}
+
+func (c *Client) tagInfoMatchesVersion(info tagVersionInfo, target *version.Version) bool {
+	if c.clientName == constants.ClientNameJitoSolana {
+		return c.jitoTagInfoMatchesVersion(info, target)
+	}
+	if c.clientName == constants.ClientNameRakurai {
+		return info.Version.Core().Compare(target.Core()) == 0
+	}
+	if target.Prerelease() != "" {
+		return info.Version.Equal(target)
+	}
+	return info.Version.Core().Compare(target.Core()) == 0
 }
 
 func (c *Client) GetRepoURL() string {
