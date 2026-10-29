@@ -217,7 +217,7 @@ func TestClientRepoConfigs_RegexPatterns(t *testing.T) {
 			clientName: constants.ClientNameAgave,
 			cluster:    constants.ClusterNameMainnetBeta,
 			regexType:  "ReleaseNotesRegex",
-			regex:      "(?i).*(This (?:is )?a stable release suitable for [^\\n]*Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?a stable release\\s*(?:[.\\r\\n]|$)|(?:This (?:is )?(?:a )?)?Mainnet(?:[- ]Beta)? Upgrade Candidate(?: release)?).*",
+			regex:      "(?i).*(This (?:is )?a stable release suitable for [^\\n]*Mainnet Beta|This (?:is )?a stable Mainnet release|This (?:is )?a stable release\\s*(?:[.\\r\\n]|$)|This (?:is )?a stable release recommended for [^\\n]* adoption|(?:This (?:is )?(?:a )?)?Mainnet(?:[- ]Beta)? Upgrade Candidate(?: release)?).*",
 		},
 		{
 			clientName: constants.ClientNameAgave,
@@ -741,13 +741,13 @@ func TestHasTaggedVersion_JitoSolanaCachesMatchingTag(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			httpClient := &http.Client{
 				Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-					if r.URL.Path != "/repos/jito-foundation/jito-solana/tags" {
+					if r.URL.Path != "/repos/jito-foundation/jito-solana/git/matching-refs/tags/4.1.0-beta.1" {
 						return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
 					}
 					return &http.Response{
 						StatusCode: http.StatusOK,
 						Header:     http.Header{"Content-Type": []string{"application/json"}},
-						Body:       io.NopCloser(strings.NewReader(tt.tags)),
+						Body:       io.NopCloser(strings.NewReader(strings.ReplaceAll(strings.ReplaceAll(tt.tags, `"name":"`, `"ref":"refs/tags/`), `"}]`, `"}]`))),
 						Request:    r,
 					}, nil
 				}),
@@ -793,13 +793,13 @@ func TestHasTaggedVersion_AgavePrereleaseRequiresExactMatch(t *testing.T) {
 
 	httpClient := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if r.URL.Path != "/repos/anza-xyz/agave/tags" {
+			if !strings.HasPrefix(r.URL.Path, "/repos/anza-xyz/agave/git/matching-refs/tags/") {
 				return nil, fmt.Errorf("unexpected request path %q", r.URL.Path)
 			}
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(`[{"name":"v4.2.0-beta.2"},{"name":"v4.1.2"}]`)),
+				Body:       io.NopCloser(strings.NewReader(`[{"ref":"refs/tags/v4.2.0-beta.2"},{"ref":"refs/tags/v4.1.2"}]`)),
 				Request:    r,
 			}, nil
 		}),
@@ -837,9 +837,47 @@ func TestHasTaggedVersion_AgavePrereleaseRequiresExactMatch(t *testing.T) {
 	}
 }
 
+func TestHasTaggedVersionCacheMissUsesSingleTargetedReferenceLookup(t *testing.T) {
+	requests := 0
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requests++
+		wantPath := "/repos/anza-xyz/agave/git/matching-refs/tags/v4.4.0"
+		if r.URL.Path != wantPath {
+			return nil, fmt.Errorf("request %d path = %q, want %q (full tag-list scans are not allowed)", requests, r.URL.Path, wantPath)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`[{"ref":"refs/tags/v4.4.0"}]`)),
+			Request:    r,
+		}, nil
+	})
+	gh := gogithub.NewClient(&http.Client{Transport: transport})
+	gh.BaseURL, _ = url.Parse("https://api.github.test/")
+	client := &Client{clientName: constants.ClientNameAgave, repoOwner: "anza-xyz", repoName: "agave", client: gh, logger: log.WithPrefix("test")}
+	target := goversion.Must(goversion.NewVersion("v4.4.0"))
+	has, err := client.HasTaggedVersion(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !has {
+		t.Fatal("HasTaggedVersion() = false, want true")
+	}
+	if requests != 1 {
+		t.Fatalf("fallback used %d requests, want 1", requests)
+	}
+	if len(client.cachedTagInfos) != 1 || client.cachedTagInfos[0].TagName != "v4.4.0" {
+		t.Fatalf("targeted lookup did not cache matched tag: %#v", client.cachedTagInfos)
+	}
+}
+
 func TestGetLatestClientVersion_JitoSolanaIncludesTestnetPrereleases(t *testing.T) {
+	// Release discovery makes exactly two API calls; cached release tags satisfy
+	// the subsequent SFDP existence check without walking repository tag pages.
+	requestCount := 0
 	httpClient := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			requestCount++
 			var body string
 			switch r.URL.Path {
 			case "/repos/jito-foundation/jito-solana/releases":
@@ -887,6 +925,19 @@ func TestGetLatestClientVersion_JitoSolanaIncludesTestnetPrereleases(t *testing.
 	got, err := client.GetLatestClientVersion()
 	if err != nil {
 		t.Fatalf("GetLatestClientVersion() error = %v", err)
+	}
+	if requestCount != 2 {
+		t.Fatalf("release discovery made %d GitHub requests, want 2", requestCount)
+	}
+	hasTag, err := client.HasTaggedVersion(got)
+	if err != nil {
+		t.Fatalf("HasTaggedVersion() error = %v", err)
+	}
+	if !hasTag {
+		t.Fatal("HasTaggedVersion() = false for version present in release discovery")
+	}
+	if requestCount != 2 {
+		t.Fatalf("release discovery and cached tag validation made %d GitHub requests, want 2", requestCount)
 	}
 	want, err := goversion.NewVersion("v4.1.0-beta.3")
 	if err != nil {
