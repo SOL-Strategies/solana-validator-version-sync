@@ -654,7 +654,7 @@ func TestAgaveDiscoveryAndSFDPTagCheckUseOneRequest(t *testing.T) {
 		if r.URL.Path != "/repos/anza-xyz/agave/releases" {
 			return nil, fmt.Errorf("unexpected GitHub request %s", r.URL.Path)
 		}
-		body := `[{"name":"Release v4.4.0","tag_name":"v4.4.0","body":"This is stable release recommended for 20% adoption. It is also recommended for Testnet and Devnet.","prerelease":false}]`
+		body := `[{"name":"Release v4.4.0","tag_name":"v4.4.0","body":"This is a stable release recommended for 20% adoption. It is also recommended for Testnet and Devnet.","prerelease":false}]`
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})
 	gh := github.NewClient(&http.Client{Transport: transport})
